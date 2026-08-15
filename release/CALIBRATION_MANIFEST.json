@@ -1,0 +1,64 @@
+{
+  "schema": "ravel-calibration-release-v1",
+  "model": "Qwen3-1.7B",
+  "vllm": "0.8.5.post1",
+  "engine": "v0",
+  "dtype": "bfloat16",
+  "contract": {
+    "prompt_tokens": 32,
+    "background_tokens": 256,
+    "probe_tokens": 128,
+    "repeats": 5
+  },
+  "profile_sets": {
+    "ravel_final": {
+      "region_a": {
+        "path": "configs/service_profiles/qwen3-1.7b-vllm-0.8.5-v0-numapinned-v3/region_a.schema-v2.json",
+        "sha256": "ee6a70a0da17cade199bb45bc5a38ca8c929c541222b86ce0eef3cb6652c05e8",
+        "engine_fingerprint": "Qwen3-1.7B|vllm=0.8.5.post1|dtype=bfloat16|engine_impl=v0|max_model_len=16384|max_num_seqs=64|max_num_batched_tokens=16384|block_size=16|apc=on|chunked_prefill=on|enforce_eager=on|gpu=NVIDIA GeForce RTX 4090|cluster=region_a",
+        "calibration_contract": {
+          "prompt_tokens": 32,
+          "background_tokens": 256,
+          "probe_tokens": 128,
+          "repeats": 5
+        }
+      },
+      "region_b": {
+        "path": "configs/service_profiles/qwen3-1.7b-vllm-0.8.5-v0-numapinned-v3/region_b.schema-v2.json",
+        "sha256": "63d7c70674d58a6224d2cd25a982704b8888e7d0e94aef42f69082a31a9545db",
+        "engine_fingerprint": "Qwen3-1.7B|vllm=0.8.5.post1|dtype=bfloat16|engine_impl=v0|max_model_len=16384|max_num_seqs=64|max_num_batched_tokens=16384|block_size=16|apc=on|chunked_prefill=on|enforce_eager=on|gpu=NVIDIA GeForce RTX 4090|cluster=region_b",
+        "calibration_contract": {
+          "prompt_tokens": 32,
+          "background_tokens": 256,
+          "probe_tokens": 128,
+          "repeats": 5
+        }
+      },
+      "region_c": {
+        "path": "configs/service_profiles/qwen3-1.7b-vllm-0.8.5-v0-numapinned-v3/region_c.schema-v2.json",
+        "sha256": "ded1806e922c44b8b5911f7e1939afff0081cd1c65179fec2a72bdd60d366cdb",
+        "engine_fingerprint": "Qwen3-1.7B|vllm=0.8.5.post1|dtype=bfloat16|engine_impl=v0|max_model_len=16384|max_num_seqs=64|max_num_batched_tokens=16384|block_size=16|apc=on|chunked_prefill=on|enforce_eager=on|gpu=NVIDIA GeForce RTX 4090|cluster=region_c",
+        "calibration_contract": {
+          "prompt_tokens": 32,
+          "background_tokens": 256,
+          "probe_tokens": 128,
+          "repeats": 5
+        }
+      }
+    }
+  },
+  "topologies": {
+    "ravel_final_recorded": {
+      "path": "release/recorded-inputs/ravel-final/topology.recorded.json",
+      "sha256": "84ad7de77c954aa5d1a769492fb1f8fa6f7b7393a9987e1fe998fc8a512ae28f"
+    },
+    "ravel_final_portable": {
+      "path": "configs/topologies/ravel-final-numapinned-v3.2-2-1.json",
+      "sha256": "859621fcdfdb6242ae6b841181325b4fe3e60be5379f5b1cb2fbeac831691e27"
+    }
+  },
+  "output_profile": {
+    "path": "configs/output_profiles/jitserve_collective_stage_context_q95.schema-v2.json",
+    "sha256": "53f18f5ad59fa3055bf11114c56bdd7ea7f8b128289782ea72fccd691fc428e4"
+  }
+}

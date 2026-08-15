@@ -1,0 +1,31 @@
+{
+  "default_client_region": "region_a",
+  "clusters": [
+    {
+      "id": "region_a",
+      "replica_ids": [
+        0,
+        1
+      ],
+      "rtt_ms_by_client_region": {
+        "region_a": 0.5,
+        "region_b": 100.0,
+        "default": 100.0
+      },
+      "service_profile": "service_profiles/local/region_a.schema-v2.json"
+    },
+    {
+      "id": "region_b",
+      "replica_ids": [
+        2,
+        3
+      ],
+      "rtt_ms_by_client_region": {
+        "region_a": 100.0,
+        "region_b": 0.5,
+        "default": 100.0
+      },
+      "service_profile": "service_profiles/local/region_b.schema-v2.json"
+    }
+  ]
+}

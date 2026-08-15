@@ -1,0 +1,46 @@
+{
+  "default_client_region": "region_a",
+  "clusters": [
+    {
+      "id": "region_a",
+      "replica_ids": [
+        0,
+        1
+      ],
+      "rtt_ms_by_client_region": {
+        "region_a": 0.0,
+        "region_b": 32.0,
+        "region_c": 10.1,
+        "default": 32.0
+      },
+      "service_profile": "../../RAVEL/configs/service_profiles/qwen3-1.7b-vllm-0.8.5-v0-numapinned-v3/region_a.schema-v2.json"
+    },
+    {
+      "id": "region_b",
+      "replica_ids": [
+        2,
+        3
+      ],
+      "rtt_ms_by_client_region": {
+        "region_a": 37.9,
+        "region_b": 0.0,
+        "region_c": 36.6,
+        "default": 37.9
+      },
+      "service_profile": "../../RAVEL/configs/service_profiles/qwen3-1.7b-vllm-0.8.5-v0-numapinned-v3/region_b.schema-v2.json"
+    },
+    {
+      "id": "region_c",
+      "replica_ids": [
+        4
+      ],
+      "rtt_ms_by_client_region": {
+        "region_a": 14.7,
+        "region_b": 37.3,
+        "region_c": 0.0,
+        "default": 37.3
+      },
+      "service_profile": "../../RAVEL/configs/service_profiles/qwen3-1.7b-vllm-0.8.5-v0-numapinned-v3/region_c.schema-v2.json"
+    }
+  ]
+}

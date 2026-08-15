@@ -1,0 +1,19 @@
+{
+  "artifact_sha256": {
+    "burst": "37cc55c902ac7001855a619fbec1ff4eb07b099376a549e28f7de7282b39c65c",
+    "deepresearch": "389593fda54288d32e83a4229fc3752705996ffa656710aba7ed671c9a1fcd9c",
+    "lmsys": "3e511beaa165b70234a5d60329633c1c4efd1d6a839770244fe96e93129508a4"
+  },
+  "deepresearch": {
+    "task_slo_eligible": false,
+    "workflow_ids": 168,
+    "workflows_missing_stages": 154
+  },
+  "request_count": 500,
+  "schema": "ravel-request-level-first500-v1",
+  "selection": {
+    "burst": "same LMSYS records with first 500 BurstGPT timestamps",
+    "deepresearch": "legacy globally time-sorted flattened branches, first 500",
+    "lmsys": "first 500 flat LMSYS records"
+  }
+}

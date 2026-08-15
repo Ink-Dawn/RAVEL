@@ -1,0 +1,20 @@
+{
+  "region_a": {
+    "region_a": 0.5,
+    "region_b": 34.1,
+    "region_c": 16.6,
+    "default": 34.1
+  },
+  "region_b": {
+    "region_a": 34.1,
+    "region_b": 0.5,
+    "region_c": 16.0,
+    "default": 34.1
+  },
+  "region_c": {
+    "region_a": 16.6,
+    "region_b": 16.0,
+    "region_c": 0.5,
+    "default": 16.6
+  }
+}

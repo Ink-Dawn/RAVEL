@@ -1,0 +1,78 @@
+{
+  "schema": "ravel-github-release-v2",
+  "prepared_at": "2026-08-15",
+  "origin_commit": "66f27b525589254016ce0aabe2ed0fab6719bd9d",
+  "release_policy": {
+    "name": "RAVEL-Unified",
+    "scheduler_id": "ravel_unified",
+    "public_scheduler_count": 1
+  },
+  "release_source_tree_sha256": "bc83cf38a250c4644fae04a395894d3614ff40479e8584ce95b4bf621f72d6ee",
+  "release_source_file_count": 66,
+  "measured_source_digest": "c9108ee504f900153c7ec0a071c51d771e76a399fcb5e55ccf93a88c6794661b",
+  "results": {
+    "tracked_directories": [
+      "results/qwen3-1.7b-vllm085-v0-ravel-unified-hybrid-final-v3-20260814"
+    ],
+    "datasets": [
+      "lmsys",
+      "burst",
+      "deepresearch"
+    ],
+    "speedups": [
+      1,
+      2,
+      4,
+      8,
+      12,
+      16
+    ],
+    "cells": 18,
+    "requests_per_cell": 500,
+    "release_rows": 18
+  },
+  "calibration": {
+    "manifest": "release/CALIBRATION_MANIFEST.json",
+    "contract": {
+      "prompt_tokens": 32,
+      "background_tokens": 256,
+      "probe_tokens": 128,
+      "repeats": 5
+    },
+    "profile_set": "ravel_final"
+  },
+  "topology": {
+    "path": "configs/topologies/ravel-final-numapinned-v3.2-2-1.json",
+    "sha256": "859621fcdfdb6242ae6b841181325b4fe3e60be5379f5b1cb2fbeac831691e27"
+  },
+  "output_profile": {
+    "path": "configs/output_profiles/jitserve_collective_stage_context_q95.schema-v2.json",
+    "sha256": "53f18f5ad59fa3055bf11114c56bdd7ea7f8b128289782ea72fccd691fc428e4"
+  },
+  "workloads": {
+    "lmsys_first500.json": {
+      "path": "data/lmsys_first500.json",
+      "sha256": "3e511beaa165b70234a5d60329633c1c4efd1d6a839770244fe96e93129508a4"
+    },
+    "burst_first500.json": {
+      "path": "data/burst_first500.json",
+      "sha256": "37cc55c902ac7001855a619fbec1ff4eb07b099376a549e28f7de7282b39c65c"
+    },
+    "deepresearch_flat_first500.json": {
+      "path": "data/deepresearch_flat_first500.json",
+      "sha256": "389593fda54288d32e83a4229fc3752705996ffa656710aba7ed671c9a1fcd9c"
+    }
+  },
+  "scope": {
+    "ravel_only": true,
+    "comparison_measurements_included": false,
+    "comparison_profiles_included": false,
+    "comparison_topologies_included": false,
+    "comparison_figures_included": false
+  },
+  "notes": [
+    "The 18 final-v3 cells retain their original per-cell fingerprints.",
+    "The inherited routing superclass is packaged only as an internal RAVEL dependency.",
+    "The public launcher and matrix runners expose only RAVEL-Unified."
+  ]
+}

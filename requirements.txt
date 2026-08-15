@@ -1,0 +1,4 @@
+# Backward-compatible complete development environment.
+-r requirements-router.txt
+-r requirements-serving.txt
+-r requirements-dev.txt

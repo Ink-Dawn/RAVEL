@@ -1,0 +1,45 @@
+{
+  "status": "ready",
+  "topology": "/root/autodl-tmp/run/ravel-optimized-20260814/topology.2-2-1.json",
+  "clusters": [
+    "region_a",
+    "region_b",
+    "region_c"
+  ],
+  "replica_ids": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "endpoints": {
+    "127.0.0.1:8000": [
+      "qwen"
+    ],
+    "127.0.0.1:8001": [
+      "qwen"
+    ],
+    "https://u722127-b80a-4e3f9d5d.cqa1.seetacloud.com:8443": [
+      "qwen"
+    ],
+    "https://uu722127-b80a-4e3f9d5d.cqa1.seetacloud.com:8443": [
+      "qwen"
+    ],
+    "https://u722127-8cb5-f6dc13db.nmb1.seetacloud.com:8443": [
+      "qwen"
+    ]
+  },
+  "service_profile_fingerprints": {
+    "region_a": "Qwen3-1.7B|vllm=0.8.5.post1|dtype=bfloat16|engine_impl=v0|max_model_len=16384|max_num_seqs=64|max_num_batched_tokens=16384|block_size=16|apc=on|chunked_prefill=on|enforce_eager=on|gpu=NVIDIA GeForce RTX 4090|cluster=region_a",
+    "region_b": "Qwen3-1.7B|vllm=0.8.5.post1|dtype=bfloat16|engine_impl=v0|max_model_len=16384|max_num_seqs=64|max_num_batched_tokens=16384|block_size=16|apc=on|chunked_prefill=on|enforce_eager=on|gpu=NVIDIA GeForce RTX 4090|cluster=region_b",
+    "region_c": "Qwen3-1.7B|vllm=0.8.5.post1|dtype=bfloat16|engine_impl=v0|max_model_len=16384|max_num_seqs=64|max_num_batched_tokens=16384|block_size=16|apc=on|chunked_prefill=on|enforce_eager=on|gpu=NVIDIA GeForce RTX 4090|cluster=region_c"
+  },
+  "invariants": {
+    "apc": true,
+    "chunked_prefill": true,
+    "profile_schema": 2,
+    "contiguous_replica_ids": true,
+    "uniform_model_inventory": true
+  }
+}

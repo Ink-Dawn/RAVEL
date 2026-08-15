@@ -1,0 +1,103 @@
+{
+  "schema_version": 2,
+  "kind": "semantic-collective-stage-output-profile",
+  "source": {
+    "name": "deepresearch_training.json",
+    "sha256": "c617759c3ec553cc76b973977d58342e606d9fbf04fa241da30dc4f1138beca6",
+    "training_only": true
+  },
+  "selector": {
+    "request_type": 2,
+    "min_stage_num": 2
+  },
+  "context_features": [
+    "stage_id",
+    "stage_num"
+  ],
+  "quantile": 0.95,
+  "fallback_tokens": 256,
+  "stages": {
+    "0": {
+      "samples": 394,
+      "mean_tokens": 55.588832487309645,
+      "q95_tokens": 100
+    },
+    "1": {
+      "samples": 556,
+      "mean_tokens": 657.8237410071943,
+      "q95_tokens": 1024
+    },
+    "2": {
+      "samples": 394,
+      "mean_tokens": 71.248730964467,
+      "q95_tokens": 152
+    },
+    "3": {
+      "samples": 474,
+      "mean_tokens": 657.0759493670886,
+      "q95_tokens": 1024
+    },
+    "4": {
+      "samples": 238,
+      "mean_tokens": 88.47899159663865,
+      "q95_tokens": 174
+    },
+    "5": {
+      "samples": 238,
+      "mean_tokens": 876.8655462184873,
+      "q95_tokens": 1024
+    }
+  },
+  "contexts": {
+    "0:4": {
+      "samples": 156,
+      "mean_tokens": 55.22435897435897,
+      "q95_tokens": 107
+    },
+    "0:6": {
+      "samples": 238,
+      "mean_tokens": 55.82773109243698,
+      "q95_tokens": 100
+    },
+    "1:4": {
+      "samples": 222,
+      "mean_tokens": 622.7792792792793,
+      "q95_tokens": 1024
+    },
+    "1:6": {
+      "samples": 334,
+      "mean_tokens": 681.1167664670659,
+      "q95_tokens": 1024
+    },
+    "2:4": {
+      "samples": 156,
+      "mean_tokens": 21.724358974358974,
+      "q95_tokens": 61
+    },
+    "2:6": {
+      "samples": 238,
+      "mean_tokens": 103.71008403361344,
+      "q95_tokens": 162
+    },
+    "3:4": {
+      "samples": 156,
+      "mean_tokens": 636.4230769230769,
+      "q95_tokens": 1024
+    },
+    "3:6": {
+      "samples": 318,
+      "mean_tokens": 667.2075471698113,
+      "q95_tokens": 1024
+    },
+    "4:6": {
+      "samples": 238,
+      "mean_tokens": 88.47899159663865,
+      "q95_tokens": 174
+    },
+    "5:6": {
+      "samples": 238,
+      "mean_tokens": 876.8655462184873,
+      "q95_tokens": 1024
+    }
+  }
+}
