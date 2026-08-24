@@ -71,7 +71,6 @@
 
 \subsection*{Abstract}
 
-
 Geo-distributed LLM serving pools GPU capacity across regions, but WAN
 latency and heterogeneous SLOs make the \emph{value} of regional capacity
 request-dependent: a region that is optional for one request may be the only
@@ -90,9 +89,11 @@ KV state.
 
 We implement RAVEL on vLLM across three geo-distributed clusters connected by
 physical WAN paths. Across conversational, bursty, and completion-oriented
-workloads, RAVEL improves request-level SLO attainment by XX\%, reduces P95
-TTFT by XX\%, and increases SLO-constrained serving capacity by XX\%.
-
+workloads, RAVEL consistently improves request-level SLO attainment as
+offered load increases. At 16$\times$ load, RAVEL improves request-level SLO attainment over the
+best-SLO baseline by 8.8, 11.2, and 16.6 percentage points on LMSYS, Burst,
+and DeepResearch, respectively, while reducing P95 TTFT by 21.8--69.2\%
+and P95 end-to-end latency by 14.7--34.5\%.
 
 
 
@@ -731,13 +732,16 @@ candidates are evaluated.
     \If{\textsc{Held}($i$) \textbf{or} \textsc{AdmissionBlocks}($i$)}{
         \Return\;
     }
+
+    $r \gets \textsc{CurrentTentativeOwner}(i)$\;
     \textsc{RemoveFromRouterQueue}($i$)\;
-    $s \gets \textsc{AttemptHandoff}(i,r_i)$\;
+    $s \gets \textsc{AttemptHandoff}(i,r)$\;
+
     \If{$s = \textsc{Rejected}$}{
-        \textsc{RestoreRouterOwnership}($i,r_i$)\;
+        \textsc{RestoreRouterOwnership}($i,r$)\;
     }
     \ElseIf{$s = \textsc{Committed}$}{
-        \textsc{FinalizePlacement}($i,r_i$)\;
+        \textsc{FinalizePlacement}($i,r$)\;
         \tcp{Successful handoff ends mobility}
     }
     \Else{
@@ -1401,6 +1405,13 @@ high-contention settings.
 More broadly, RAVEL shows that an online serving system need not postpone
 demand accounting to preserve the flexibility to exploit information revealed
 by later arrivals.
+
+
+
+
+
+
+
 
 
 
