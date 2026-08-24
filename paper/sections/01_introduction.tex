@@ -1,0 +1,160 @@
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/motivation.pdf}
+    \caption{
+    \textbf{Information--slack tradeoff.}
+    Fixed-delay late binding consumes SLO slack to observe more demand;
+    RAVEL accounts demand immediately and selectively uses a
+    request-specific, slack-bounded mobility hold for pre-handoff replanning.
+    }
+    \label{fig:motivation}
+\end{figure}
+
+
+\section{Introduction}
+\label{sec:introduction}
+
+LLM serving is increasingly expanding beyond scheduling replicas within a
+single cluster toward pooling inference capacity across geographically
+distributed clusters~\cite{skylb,gorgo,solyx}.
+Geo-distribution gives a service more capacity choices, but also makes the
+choice of serving site consequential: a placement determines not only GPU load
+and cache locality, but also the WAN path and remote serving conditions a
+request encounters.
+At the same time, serving traffic has become increasingly heterogeneous.
+Interactive requests may impose tight time-to-first-token (TTFT) and
+time-between-token (TBT) bounds, whereas longer-running or multi-stage
+requests may instead be governed by end-to-end completion deadlines
+~\cite{distserve,jitserve}.
+The combination of geographic and SLO heterogeneity means that available GPU
+capacity is not equally useful to every request.
+
+Existing distributed and geo-distributed routers therefore make increasingly
+informed placement decisions, incorporating load, network latency, cache
+locality, and request-level SLOs when choosing where an arrival should
+execute~\cite{preble,dualmap,skylb,gorgo,quartz}.
+These mechanisms improve the destination selected for the request and system
+state visible \emph{now}.
+We find, however, that heterogeneous SLOs create an additional online
+allocation problem: a placement that is locally attractive for the current
+request can consume regional capacity that a later request may be unable to
+replace.
+The relevant question is therefore not only
+\emph{where should this request execute?}, but also
+\emph{when should an earlier placement become final?}
+
+Consider two serving regions, $A$ and $B$, and two requests, $r_1$ and $r_2$.
+Let $\mathcal{F}_i$ denote the set of regions in which request $i$ can satisfy
+its SLO.
+Suppose
+$\mathcal{F}_1=\{A,B\}$, while
+$\mathcal{F}_2=\{A\}$.
+When $r_1$ arrives first, $A$ may be its faster destination, making an
+assignment to $A$ locally preferable.
+Doing so, however, can consume the only SLO-feasible capacity available to
+$r_2$ when it arrives shortly afterward; assigning $r_1$ to $B$ instead can
+allow both requests to succeed.
+\emph{Region $A$ is merely faster for $r_1$, but it is essential for $r_2$.}
+Thus, the \emph{value} of regional capacity is request-dependent:
+capacity that is interchangeable for a flexible request may be indispensable
+to a more region-constrained one.
+Consequently, optimizing each placement independently need not maximize
+request-level SLO attainment.
+
+The difficulty is temporal rather than merely predictive.
+When $r_1$ arrives, even an accurate router can estimate only the demand and
+serving state visible at that time; it cannot know whether a more constrained
+request such as $r_2$ will arrive next.
+Making the placement final immediately preserves SLO slack, but can lock in an
+allocation before this information becomes available.
+A natural alternative is to wait for subsequent arrivals before deciding,
+as in delayed-scheduling and late-binding approaches
+~\cite{delayscheduling,sparrow}.
+For SLO-constrained inference, however, this information is not free:
+every millisecond spent waiting also consumes the same SLO budget needed for
+WAN transfer, queueing, and inference.
+We refer to this tension as the
+\emph{information--slack tradeoff}.
+Figure~\ref{fig:motivation} makes the tradeoff visible empirically.
+Fixed-delay late binding can improve SLO attainment when a short wait exposes
+useful arrivals, but increasing the delay eventually erodes those gains as
+more SLO slack is consumed.
+
+RAVEL is built around a simple observation:
+\emph{waiting to finalize placement need not mean waiting to account for
+demand}.
+Rather than treating placement as a single atomic decision, RAVEL separates
+when an arrival becomes visible to capacity planning from when its destination
+becomes final.
+On arrival, RAVEL tentatively assigns the request to a serving replica and
+immediately attributes its prospective demand to that replica.
+Later requests therefore observe the demand of earlier arrivals even while
+those earlier placements remain revisable.
+When additional observation is useful, RAVEL can selectively keep eligible
+non-LATENCY requests router-owned for a short, request-specific mobility hold
+bounded by both remote RTT and predicted SLO slack.
+Unlike fixed-delay late binding, these requests are already placed and
+accounted during the hold.
+New arrivals may then trigger bounded replanning of still-router-owned
+requests.
+A placement becomes final only after successful engine handoff; because RAVEL
+stops reassignment at this boundary, it never needs to migrate
+engine-managed KV state.
+
+Realizing this abstraction requires addressing three systems challenges.
+First, RAVEL must determine which replicas remain SLO-feasible for each
+request under heterogeneous WAN delays, engine backlog, Prefill and Decode
+interference, and request-specific success criteria.
+RAVEL addresses this using calibrated, replica-specific SLO quotes derived
+from live serving state.
+Second, tentative work must influence subsequent decisions without becoming
+double-counted or stale when its placement changes.
+RAVEL therefore maintains prospective accounting whose queue ownership and
+replica-dependent charges move with a reassignment.
+Third, retaining revisability cannot require repeatedly optimizing over all
+outstanding requests or allowing a deep engine queue to hide work from the
+router.
+RAVEL limits expensive replanning to a bounded router-owned cohort and keeps
+the engine-visible frontier shallow, while SLO-specific admission and local
+Prefill control preserve latency-sensitive execution constraints.
+
+We implement RAVEL as an asynchronous routing layer for
+vLLM~\cite{vllm} and evaluate it on five serving replicas across three
+clusters connected by physical WAN paths.
+Our experiments cover conversational traffic, bursty arrivals, and
+completion-oriented demand over six offered-load levels.
+At $16\times$ load, RAVEL improves request-level SLO attainment over the
+best-SLO baseline by \textbf{8.8}, \textbf{17.2}, and
+\textbf{16.6 percentage points} on LMSYS, Burst, and DeepResearch,
+respectively.
+Across the same three workloads, it reduces P95 TTFT by
+\textbf{21.8--69.2\%} relative to the corresponding best-SLO baseline.
+On Burst, for example, RAVEL increases SLO attainment from 62.0\% to 79.2\%
+while reducing P95 TTFT from 8.70\,s to 2.68\,s and P95 end-to-end latency
+from 28.68\,s to 18.78\,s.
+Its online replanning path remains millisecond-scale, with a measured P95
+scheduling-pass latency of 2.10\,ms at Burst $12\times$ load.
+
+In summary, this paper makes three contributions:
+\begin{itemize}
+    \item
+    We identify the \emph{request-dependent value of regional capacity} in
+    geo-distributed LLM serving: heterogeneous SLOs make capacity
+    interchangeable for some requests but essential for others, so optimizing
+    placements independently can reduce aggregate request-level SLO
+    attainment.
+
+    \item
+    We introduce an \emph{immediate-accounting, deferred-commitment}
+    abstraction that makes arrived demand visible immediately while retaining
+    pre-handoff placement revisability.
+    RAVEL realizes this abstraction through replica-specific SLO quotes,
+    transferable prospective accounting, slack-bounded mobility, and bounded
+    cohort replanning.
+
+    \item
+    We implement RAVEL on vLLM and evaluate it on a physical-WAN deployment,
+    showing substantial SLO-attainment gains across heterogeneous,
+    bursty, and completion-oriented workloads while keeping online replanning
+    at millisecond-scale latency.
+\end{itemize}

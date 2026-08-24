@@ -1,0 +1,66 @@
+\section{Implementation}
+\label{sec:implementation}
+
+We implement RAVEL in Python as an asynchronous control layer in front of
+geo-distributed vLLM serving replicas.
+Our implementation targets vLLM~0.8.5.post1 using its frozen V0 scheduler
+contract.
+All scheduling operations that modify Router-queue ownership, perform
+replanning, or dispatch requests are serialized by a single
+\texttt{asyncio} scheduler lock.
+New arrivals, mobility-hold timers, and explicit replanning requests therefore
+enter the same serialized control path, preventing concurrent replanning passes
+from racing to modify tentative ownership.
+Terminal callbacks may asynchronously release tracked service charges and then
+request another serialized scheduling pass.
+
+RAVEL loads serving behavior from external schema-v2 service profiles rather
+than relying on hard-coded token rates.
+Each profile carries an engine fingerprint and is associated with a serving
+cluster in the topology; formal runs require an external profile for every
+cluster.
+At runtime, Prefill and Decode curves are linearly interpolated between
+measured concurrency points and clamped to the nearest endpoint outside the
+calibrated range.
+The engine adapter separately constructs a conservative Prefill envelope by
+taking the maximum calibrated Prefill slope and intercept across concurrency
+levels.
+For multi-stage completion requests, the Router may additionally load an
+offline semantic output profile indexed by request-visible workflow metadata,
+such as $(\textit{stage\_id},\textit{stage\_num})$.
+
+RAVEL integrates with vLLM without modifying its source tree.
+At process startup, a lightweight adapter feature-detects and wraps
+\texttt{Scheduler.\_get\_priority} and
+\texttt{Scheduler.\_schedule\_chunked\_prefill}; if either hook is unavailable,
+startup fails rather than silently disabling RAVEL's local controls.
+For LATENCY requests, RAVEL encodes a Router-derived deadline-order key
+together with the TBT requirement in a reserved priority range, while
+non-LATENCY requests in the mixed path retain ordinary FCFS priority.
+When LATENCY Decode is active, the adapter extracts the tightest active TBT
+and combines it with the conservative Prefill envelope to derive a
+block-aligned bound on the next Prefill chunk.
+It temporarily reduces \texttt{max\_num\_batched\_tokens} for that
+Chunked-Prefill scheduling call and restores the configured value in a
+\texttt{finally} block, so the cap affects only the current scheduling
+iteration.
+
+Engine handoff is implemented asynchronously.
+After the Router's admission and budget checks succeed, the target replica
+first registers the request and RAVEL creates and tracks the corresponding
+engine-facing posting task.
+Successful replica registration together with successful posting-task creation
+constitutes the handoff defined in
+Section~\ref{sec:design:commitment}.
+If the target rejects registration, the request is returned to its Router
+queue and remains subject to the normal mobility and rebind constraints.
+Errors while installing or executing an engine-facing posting task are surfaced
+to the control plane rather than being silently converted into ordinary
+router-level rebindings.
+Posting attempts carry attempt identifiers so stale callbacks cannot clean up
+state belonging to a newer attempt.
+After handoff, replica pending and running state continues to feed subsequent
+Router quotes.
+At request termination, RAVEL releases the tracked active-request service
+charge and requests another scheduling pass so that the updated service state
+can affect requests that remain Router-owned.

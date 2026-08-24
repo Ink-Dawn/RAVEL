@@ -1,0 +1,13 @@
+% Pseudocode style: match the GMAX/NSDI look in Fig. 2.
+% - ruled caption and bottom rule
+% - line numbers
+% - vlined L-shaped block guides (no explicit end-function/end-if text)
+% - purple // comments, with no triangle marker
+\definecolor{RavelCommentPurple}{RGB}{190,0,140}
+\newcommand{\RavelComment}[1]{\textcolor{RavelCommentPurple}{#1}}
+\SetCommentSty{RavelComment}
+\SetAlgoNlRelativeSize{-1}
+\SetNlSty{bfseries}{}{}
+\SetKwProg{Fn}{Function}{:}{}
+\SetKw{Return}{return}
+\DontPrintSemicolon

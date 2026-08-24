@@ -1,0 +1,69 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Distributed and geo-distributed LLM routing.}
+Distributed LLM serving systems increasingly incorporate runtime load and
+cache locality into request routing.
+Preble jointly considers reusable KV state and computation load when
+scheduling prompts across distributed replicas~\cite{preble}, while DualMap
+balances cache affinity against load and performs hotspot-aware
+rebalancing~\cite{dualmap}.
+Recent systems explicitly target geographically distributed serving.
+SkyWalker handles cross-region traffic while preserving KV-cache locality and
+load balance~\cite{skylb};
+GORGO incorporates WAN latency, queueing state, and Prefill/cache cost into
+cross-region routing decisions~\cite{gorgo};
+and recent work such as Solyx combines serving telemetry with WAN
+measurements for per-request cross-site placement~\cite{solyx}.
+Although these systems may redirect or rebalance traffic after an initial
+choice, RAVEL differs in the control abstraction it exposes:
+it explicitly couples \emph{immediate prospective demand accounting} with
+\emph{pre-handoff placement revisability}.
+An arrived request is accounted at a tentative replica immediately, while
+that replica may still change until the request is handed off to the serving
+engine.
+
+\paragraph{SLO-aware LLM serving and application scheduling.}
+Prior systems also adapt LLM execution to request-level latency and SLO
+requirements.
+Sarathi-Serve uses Chunked Prefill to reduce Prefill--Decode interference and
+control TTFT and inter-token latency~\cite{sarathi}, while DistServe
+disaggregates Prefill and Decode and provisions the two phases according to
+TTFT and TPOT requirements~\cite{distserve}.
+JITServe targets heterogeneous latency-, deadline-, and compound-request
+SLOs, scheduling serving capacity from imprecise request information and
+refining those estimates as generation progresses~\cite{jitserve}.
+AdaServe instead customizes speculative decoding to per-request SLO
+requirements~\cite{adaserve}.
+Other systems exploit structure across related LLM calls:
+Parrot exposes application-level semantic dependencies to coordinate
+multi-request execution~\cite{parrot}, and Agentix treats agentic programs as
+first-class scheduling entities to optimize program-level end-to-end
+latency~\cite{agentix}.
+Libra further partitions requests into cooperating micro-requests and combines
+global split-point decisions with local SLO-aware batching to balance dynamic
+serving load across instances~\cite{libra}.
+RAVEL applies the same broad principle of request-specific SLO awareness at a
+different control layer: it uses WAN delay and replica serving state to
+determine which geographic capacity remains viable for each request before
+engine handoff.
+Its local Prefill control complements this global decision by bounding
+Prefill interference in accordance with latency-sensitive execution
+constraints.
+
+\paragraph{Dynamic reassignment and migration.}
+Serving systems can also revise placement after an initial assignment.
+Llumnix dynamically reschedules requests across model instances and uses live
+migration to improve load balancing and isolation, mitigate resource
+fragmentation, and differentiate request priorities and SLOs~\cite{llumnix}.
+Such migration preserves placement flexibility even after execution state has
+materialized.
+RAVEL chooses an earlier control boundary: a request remains reassignable
+while it is Router-owned, but its placement becomes final after successful
+engine handoff.
+Thus, RAVEL performs reassignment before changing placement would require
+coordination with engine-managed request state, whereas migration systems
+retain flexibility after that state already exists.
+The two approaches are complementary: pre-handoff replanning can avoid some
+state movement, while runtime migration can correct imbalance that emerges
+after execution begins.
