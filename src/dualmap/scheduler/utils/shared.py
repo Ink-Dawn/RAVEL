@@ -42,6 +42,10 @@ class SharedState:
     def set_request_terminal_callback(self, callback):
         self._request_terminal_callback = callback
 
+    def set_request_handoff_callback(self, callback):
+        """Register an observability hook immediately before engine handoff."""
+        self._request_handoff_callback = callback
+
     def __init__(self, metric_store, tokenizer, args):
         self.metric_store = metric_store
         self.tokenizer = tokenizer
@@ -52,6 +56,7 @@ class SharedState:
         self.posting_request_tasks_lock = asyncio.Lock() #{req_id, task}
         self._prefill_started_callback = None
         self._request_terminal_callback = None
+        self._request_handoff_callback = None
         self.replicas_ip_port = args.replicas_ip_port.split(',')
         self.num_replicas = len(self.replicas_ip_port)
         self.sidecar_waiting_movable = SidecarWaitingMovableRegistry(
@@ -299,6 +304,21 @@ class SharedState:
         self.last_request_time = time.perf_counter()
         logger.info(f"Adding task for request {request._id} to replica {replica_id},session_id={request._native_session_id}")
         replica = self.replica_budgets[replica_id]
+        # Freeze the router's final tentative quote before KV materialization.
+        # This is deliberately before replica.add_request(): the callback is
+        # diagnostic-only and must observe the exact placement crossing the
+        # reversible frontier without changing admission semantics.
+        handoff_cb = getattr(self, "_request_handoff_callback", None)
+        if handoff_cb is not None:
+            try:
+                result = handoff_cb(replica_id, request)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:
+                logger.exception(
+                    "request-handoff quote callback failed for request %s",
+                    getattr(request, "_id", "?"),
+                )
         if not await replica.add_request(request):
             return False
         target_ip_port = self.replicas_ip_port[replica_id]

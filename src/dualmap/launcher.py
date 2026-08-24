@@ -36,12 +36,16 @@ class SystemLauncher:
         self._init_router(args)
         
     def _init_router(self, args):
-        if self._global_scheduler_type != "ravel_unified":
+        scheduler_types = {
+            "ravel_unified": RavelUnifiedGlobalScheduler,
+        }
+        scheduler_cls = scheduler_types.get(self._global_scheduler_type)
+        if scheduler_cls is None:
             raise ValueError(
-                "this RAVEL-only release exposes only scheduler ravel_unified"
+                "this upgraded RAVEL worktree exposes only ravel_unified"
             )
-        logger.info("init_router: ravel_unified")
-        self._request_router_proxy.global_scheduler = RavelUnifiedGlobalScheduler(
+        logger.info("init_router: %s", self._global_scheduler_type)
+        self._request_router_proxy.global_scheduler = scheduler_cls(
             num_replicas=self._num_replicas,
             shared_state=self.shared_state,
             args=args,

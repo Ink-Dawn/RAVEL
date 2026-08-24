@@ -363,46 +363,37 @@ deadline 请求，恶化 TTFT，却不一定提高其 completion SLO。
 
 ### 7.2 Completion workflow path
 
-completion-only 流量使用近似 maximum on-time set：
+completion-only 流量继续使用因果到达压力检测，但不再构造 protected
+OnTimeSet，也不在 Router 中延迟 predicted-miss 请求。压力条件为：
 
-1. 按 absolute deadline 扫描；
-2. 只将 quote feasible 且 Decode/TBT set feasible 的请求放入保护集；
-3. 若保护集已满，只有当 newcomer 可行且替换当前最大 profiled service
-   victim 能释放正服务量时才替换；
-4. 被替换或当前不可行请求标记 deferred，不拒绝；
-5. 第二遍尝试把 deferred 请求填入其他可行 replica。
+    observed_qps >= total_sequence_capacity
+                    / max(1s, 0.5 * minimum_observed_completion_SLO)
 
-这对应单机 Moore-Hodgson 思想在异构多 replica 上的确定性近似，不声明
-求得 NP-hard 多机带网络时延问题的精确最优解。
+压力模式只改变两个仍有独立作用的量：
 
-### 7.3 Deadline-bounded soft admission
+1. 可移动候选上限扩展到所有 replica 的总 sequence capacity；
+2. completion quote 使用 held-out semantic profile 的 expected output，
+   q95 保留为诊断和保守 engine service 元数据。
 
-只有纯 multi-stage completion 流量且系统接近 sequence saturation 时启用：
+所有候选均由 WorkYield 的 SLO-aware greedy planner 放置，随后通过
+CenterYield 的普通可逆 frontier 立即派发。请求不会因 predicted miss
+进入第二个 Router-side admission queue。
 
-```text
-total_capacity = replicas * pending_request_limit
-reserve         = one replica-equivalent capacity by default
-activation      = total_capacity - reserve
-```
+### 7.3 Campaign-B 删除决定
 
-`reserve` 来自部署 `max_num_seqs`，不是 GPU 型号常数，也不按数据集
-配置。
+2026-08-24 的 DeepResearch 16x、500-request、2/2/1 三集群消融显示：
 
-保护集请求优先进入 engine。预测 miss 的 deferred 请求在以下条件同时满足
-时留在可逆队列：
+| 路径 | SLO | queue wait mean |
+|---|---:|---:|
+| 旧 Full（5 次均值） | 63.04% | 7.893 s |
+| NoSoftAdmission | 73.40% | 1.609 s |
+| NoOnTimeSet | 75.00% | 1.011 s |
+| 升级 Full（单次回归） | 79.00% | 1.193 s |
 
-- engine 或 Router 队列仍有 protected 请求；
-- 当前时间早于 deferred 请求自己的 objective deadline。
-
-释放时间严格定义为：
-
-```text
-release_at_i = arrival_i + request_SLO_i
-```
-
-到达 `release_at_i` 后必须提交，不能无限饥饿。所有请求最终执行，因此
-SLO 提升不是 rejection gain。该规则表示“已预测为迟到的工作让位于仍可
-挽救的工作，但最多让到自己的 deadline”，不含经验性的 1.4/1.8 倍常数。
+输入、目标输出、SLO budget、trace seed、topology 和五个 endpoint 一致。
+升级回归中旧 soft-admission 激活、protected 与 plan-generation 字段均为
+0。因而 production path 删除 protected OnTimeSet 与 deadline-bounded
+withholding；历史冻结快照保留在独立目录，仅用于结果复现。
 
 ## 8. Workflow 输出语义 profile
 
@@ -420,9 +411,9 @@ fallback = stage_id aggregate, then declared routing hint
 workflow 中不同的语义角色。profile 文件绑定 training source SHA256，
 并标记 `training_only=true`。
 
-在普通负载和 soft-admission 激活前，upper 用于 completion 可行性风险需求。
-在 soft-admission 饱和区，maximum-cardinality 保护集使用 expected workload，
-q95 仍记录为诊断；否则过度保守的 q95 会把大量可挽救长阶段请求提前判死。
+在 completion 压力模式中，WorkYield quote 使用 expected workload；
+q95 仍记录为诊断与保守 engine service 元数据。普通模式沿用基础风险需求。
+两条路径都不读取当前请求的真实输出。
 
 该 profile 不是必须项。未知 context 回退到 stage aggregate，再回退到
 声明 hint，不允许回退到真实测试输出。
@@ -442,11 +433,6 @@ local_deadline = engine_arrival + remaining_budget
 普通 vLLM priority 不在该 signed-int64 保留负值区，adapter 对其保持 inert。
 `RAVEL-Unified-Balanced` 使用 phase-aware Prefill EDF/SPT，但不提前下放
 Router 已标记为 predicted miss 的请求。
-
-另保留显式实验策略 `RAVEL-Unified-Standby`。它允许 predicted miss 在
-Router deadline 前进入 engine waiting queue，并用 deferred bit、Prefill
-service 与 held-out output q95 推导的 Decode occupancy 约束机会执行。该策略
-是 latency-oriented 实验变体，不是发布默认值。
 
 endpoint 重启后的首个请求会受到 CUDA/kernel/allocator 冷状态影响。正式
 比较必须先执行所有策略共享、且不计入结果的统一 warm-up，随后重置 APC，
@@ -500,7 +486,7 @@ ARRIVED
 4. first-token 释放 Prefill reservation，但请求继续贡献 Decode pressure；
 5. completion/failed 清理 remaining state；
 6. failed、timeout 和 no-feasible 请求仍进入结果，不从分母删除；
-7. soft-deferred 请求最晚在自己的 objective deadline 释放；
+7. predicted-miss 请求不得进入第二个 Router-side withholding queue；
 8. Router 选择不得访问测试 `output_len` 或 workload 名称；
 9. Prefix shadow hit 不从保守 prompt work 扣除；
 10. topology、profile、trace、source 和参数均写入 cell manifest。
@@ -511,9 +497,6 @@ ARRIVED
 
 - Mixed WorkYield planner：设不可移动 fixed prefix 共 F 条，复杂度为
   `O(N log N + F log F + N * R + F)`；
-- on-time set 的直接实现包含 victim/TBT-set 扫描，最坏
-  `O(N^2 * R + sorting)`，但 N 被 `max_num_seqs` 派生的 candidate limit
-  限制；
 - 每个请求最多一次 pre-KV rebind；
 - 不发送逐 token Router 控制事件；
 - 生命周期反馈是 first-token 与 completion 的批量/稀疏事件；
@@ -559,9 +542,8 @@ batch、coalescing、token bucket 和 bounded queue 吸收 completion burst。
 ### 12.4 容量推导参数
 
 - mobile candidate limit = `max_num_seqs`；
-- soft-admission total capacity =
-  `replicas * pending_request_limit`；
-- default reserve = one replica-equivalent `pending_request_limit`；
+- completion-pressure candidate ceiling =
+  replicas * pending_request_limit；
 - adapter chunk = TBT 与 service-envelope 的 block-aligned 解。
 
 ### 12.5 固定 policy 参数
@@ -655,7 +637,7 @@ latency 越低越优；placement 与 Prefix 指标不自动判定“越大越优
 
 - 统一策略：
   `src/dualmap/scheduler/global_scheduler/ravel_unified_global_scheduler.py`
-- 基础 quote / WorkYield / OnTimeSet：
+- 基础 quote / WorkYield：
   `src/dualmap/scheduler/global_scheduler/ravel_native_global_scheduler.py`
 - engine priority protocol：
   `src/ravel_engine_adapter/protocol.py`

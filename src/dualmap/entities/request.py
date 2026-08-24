@@ -117,6 +117,31 @@ class Request():
         self._ravel_soft_admission_victims = 0
         self._ravel_soft_plan_generation = -1
         self._ravel_soft_selected = False
+        # Mechanism-level observability for protected/deferred admission.
+        # These fields are write-only diagnostics and never enter placement.
+        self._ravel_soft_admission_first_deferred_at = 0.0
+        self._ravel_soft_admission_deferral_s = 0.0
+        self._ravel_soft_admission_deadline_release = False
+        self._ravel_soft_admission_dispatch_at = 0.0
+        # The planner continuously refreshes this tentative quote.  The
+        # handoff callback freezes the last replica-matching value immediately
+        # before the request is materialized in the engine.
+        self._ravel_last_quote_replica_id = -1
+        self._ravel_last_quote_timestamp_s = 0.0
+        self._ravel_last_quote_predicted_ttft_s = 0.0
+        self._ravel_last_quote_predicted_tbt_s = 0.0
+        self._ravel_last_quote_point_completion_s = 0.0
+        self._ravel_last_quote_risk_completion_s = 0.0
+        self._ravel_last_quote_feasible = False
+        self._ravel_quote_handoff_replica_id = -1
+        self._ravel_quote_handoff_timestamp_s = 0.0
+        self._ravel_quote_handoff_age_s = 0.0
+        self._ravel_quote_handoff_predicted_ttft_s = 0.0
+        self._ravel_quote_handoff_predicted_tbt_s = 0.0
+        self._ravel_quote_handoff_point_completion_s = 0.0
+        self._ravel_quote_handoff_risk_completion_s = 0.0
+        self._ravel_quote_handoff_feasible = False
+        self._ravel_quote_handoff_valid = False
         self._ravel_profile_output_expected = 0
         self._ravel_profile_output_upper = 0
 

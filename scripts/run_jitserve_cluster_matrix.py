@@ -58,7 +58,9 @@ DEFAULT_NETWORK_DELAY_MODE = os.environ.get(
 )
 
 
-POLICIES = {"RAVEL-Unified": "ravel_unified"}
+POLICIES = {
+    "RAVEL-Unified": "ravel_unified",
+}
 
 DEFAULT_POLICY_NAMES = ("RAVEL-Unified",)
 

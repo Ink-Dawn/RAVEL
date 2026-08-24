@@ -1,6 +1,6 @@
 # RAVEL-Unified 参数与公式审计
 
-> 审计对象：`RavelUnifiedGlobalScheduler`（mixed WorkYield + dynamic Chunked Prefill；pure workflow OnTimeSet + soft admission）生效路径。更新日期：2026-08-12。
+> 审计对象：RavelUnifiedGlobalScheduler（WorkYield + CenterYield；completion-pressure semantic profile；dynamic Chunked Prefill）生效路径。更新日期：2026-08-24。
 > 参数分为：系统测量量、实验协议、operator policy、控制器计算预算和 legacy fallback。
 
 ## 1. 系统测量量
@@ -55,20 +55,16 @@ B_latency_full = max(B_ttft, L_ttft × tpot_decode(n_decode^U) / L_tbt)
 | `output_quantile` | 0.90 | throughput/collective Decode demand 的保守分位数 |
 | `SLO profile` | JITServe paper | 外部服务目标，不由 RAVEL 学习 |
 | fallback output hint | 256 | 冷启动公开先验；必须报告 sensitivity |
-| `soft_admission_reserve_sequences` | 0（自动） | 0 表示保留一个 replica 的 `max_num_seqs`；显式值是 operator 容量策略，不允许按数据集选择 |
 
 ## 4. 控制器计算预算
 
 | 参数 | 默认值 | 含义 |
 |---|---:|---|
 | `mobile_candidate_limit` | `max_num_seqs` | 每次线性 cohort assignment 最多考虑的 EDF 候选数 |
-| `mobile_beam_width` | 256 | 历史 beam 变体兼容参数；不进入 Unified 的 WorkYield/OnTimeSet 主 planner |
+| `mobile_beam_width` | 256 | 历史 beam 变体兼容参数；不进入 Unified 的 WorkYield 主 planner |
 | `residual/output history window` | 256 | 有界 Router 内存预算 |
 
-候选上限由部署 sequence capacity 派生。mixed WorkYield 在排序后摊销扫描
-fixed prefix，复杂度为 `O(N log N + F log F + NR + F)`；pure OnTimeSet 的
-victim/set 扫描最坏为 `O(N^2 R)`。两者都不在 arrival 路径运行 beam search，
-且 `N <= max_num_seqs`；history window 只限制在线统计内存。
+候选上限由部署 sequence capacity 派生；completion-pressure 模式可扩展到 replicas * pending_request_limit。WorkYield 在排序后摊销扫描 fixed prefix，复杂度为 O(N log N + F log F + NR + F)，不在 arrival 路径运行 beam search；history window 只限制在线统计内存。
 
 ## 5. 派发与移动不变量
 
@@ -82,7 +78,7 @@ victim/set 扫描最坏为 `O(N^2 R)`。两者都不在 arrival 路径运行 bea
 - Latency 请求不 hold；只有存在 remote SLO-feasible quote 时才允许参与未物化 KV 的重新分配。
 - 不可移动固定队列中 EDF 更早的请求，其完整 Prompt debt/request intercept 必须进入 planner 的 `work_before/requests_before`；所有固定队列请求占用 future pending slot。
 - 凸边际项为 `((W+s)^2-W^2)/SLO^2`，是二次拥塞势函数的离散增量，不是拟合权重。
-- pure workflow 只有在 `outstanding >= total_capacity - one_replica_capacity` 时启用 soft admission；deferred 请求最晚在自己的 objective deadline 释放，所有请求最终执行。
+- pure workflow 的因果到达压力只扩展候选窗口并启用 semantic expected-output quote；所有请求仍通过 CenterYield 立即进入普通容量派发，不构造 protected/deferred cohort。
 
 ## 6. Prefix 与指标边界
 

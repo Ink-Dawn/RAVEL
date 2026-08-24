@@ -71,7 +71,9 @@ DEFAULT_NETWORK_DELAY_MODE = os.environ.get(
     "RAVEL_NETWORK_DELAY_MODE", ""
 )
 
-RAVEL_UNIFIED_POLICIES = {"RAVEL-Unified"}
+RAVEL_UNIFIED_POLICIES = {
+    "RAVEL-Unified",
+}
 
 # Policy parameters stay fixed across deployments. Engine dimensions and the
 # client region are loaded from the calibrated topology at runtime.
@@ -96,12 +98,6 @@ POLICY_RUN_CONFIG: dict[str, int | float | str] = {
     "ravel_output_history_window": 256,
     "ravel_output_min_samples": 20,
     "ravel_mobile_beam_width": 256,
-    "ravel_soft_admission_release_policy": "slo_deadline",
-    "ravel_soft_admission_reserve_sequences": int(
-        os.environ.get(
-            "RAVEL_SOFT_ADMISSION_RESERVE_SEQUENCES", "0"
-        )
-    ),
 }
 
 
@@ -803,10 +799,6 @@ def run_cell(
             [
                 "--ravel-collective-stage-output-profile",
                 str(output_profile_path.resolve()),
-                "--ravel-soft-admission-release-policy",
-                str(run_config["ravel_soft_admission_release_policy"]),
-                "--ravel-soft-admission-reserve-sequences",
-                str(run_config["ravel_soft_admission_reserve_sequences"]),
             ]
         )
     manifest = {

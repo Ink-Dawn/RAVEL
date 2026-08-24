@@ -178,6 +178,33 @@ async def async_send_request(metric_store, result_path, model_name,
         "point_predicted_ttft_s": request._point_predicted_ttft_s,
         "predicted_objective_s": request._predicted_objective_s,
         "point_predicted_objective_s": request._point_predicted_objective_s,
+        "quote_handoff_replica_id": int(
+            getattr(request, "_ravel_quote_handoff_replica_id", -1)
+        ),
+        "quote_handoff_timestamp_s": float(
+            getattr(request, "_ravel_quote_handoff_timestamp_s", 0.0)
+        ),
+        "quote_handoff_age_s": float(
+            getattr(request, "_ravel_quote_handoff_age_s", 0.0)
+        ),
+        "quote_handoff_predicted_ttft_s": float(
+            getattr(request, "_ravel_quote_handoff_predicted_ttft_s", 0.0)
+        ),
+        "quote_handoff_predicted_tbt_s": float(
+            getattr(request, "_ravel_quote_handoff_predicted_tbt_s", 0.0)
+        ),
+        "quote_handoff_point_completion_s": float(
+            getattr(request, "_ravel_quote_handoff_point_completion_s", 0.0)
+        ),
+        "quote_handoff_risk_completion_s": float(
+            getattr(request, "_ravel_quote_handoff_risk_completion_s", 0.0)
+        ),
+        "quote_handoff_feasible": int(
+            bool(getattr(request, "_ravel_quote_handoff_feasible", False))
+        ),
+        "quote_handoff_valid": int(
+            bool(getattr(request, "_ravel_quote_handoff_valid", False))
+        ),
         "ttft_residual_guard_s": request._ttft_residual_guard_s,
         "objective_residual_guard_s": request._objective_residual_guard_s,
         "risk_calibrated": int(request._risk_calibrated),
@@ -264,6 +291,23 @@ async def async_send_request(metric_store, result_path, model_name,
                 - float(request._arrived_at),
             ),
             6,
+        ),
+        "ravel_soft_admission_first_deferred_at": float(
+            getattr(request, "_ravel_soft_admission_first_deferred_at", 0.0)
+        ),
+        "ravel_soft_admission_deferral_s": round(
+            float(getattr(request, "_ravel_soft_admission_deferral_s", 0.0)),
+            6,
+        ),
+        "ravel_soft_admission_deadline_release": int(
+            bool(
+                getattr(
+                    request, "_ravel_soft_admission_deadline_release", False
+                )
+            )
+        ),
+        "ravel_soft_admission_dispatch_at": float(
+            getattr(request, "_ravel_soft_admission_dispatch_at", 0.0)
         ),
         "ravel_soft_plan_generation": int(
             getattr(request, "_ravel_soft_plan_generation", -1)
@@ -543,6 +587,27 @@ async def async_send_request(metric_store, result_path, model_name,
             ),
             "ravel_soft_admission_victims": int(
                 getattr(request, "_ravel_soft_admission_victims", 0)
+            ),
+            "ravel_soft_admission_first_deferred_at": float(
+                getattr(request, "_ravel_soft_admission_first_deferred_at", 0.0)
+            ),
+            "ravel_soft_admission_deferral_s": round(
+                float(
+                    getattr(request, "_ravel_soft_admission_deferral_s", 0.0)
+                ),
+                6,
+            ),
+            "ravel_soft_admission_deadline_release": int(
+                bool(
+                    getattr(
+                        request,
+                        "_ravel_soft_admission_deadline_release",
+                        False,
+                    )
+                )
+            ),
+            "ravel_soft_admission_dispatch_at": float(
+                getattr(request, "_ravel_soft_admission_dispatch_at", 0.0)
             ),
             "ravel_soft_plan_generation": int(
                 getattr(request, "_ravel_soft_plan_generation", -1)

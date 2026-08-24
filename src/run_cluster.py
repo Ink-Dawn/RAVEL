@@ -142,21 +142,6 @@ def parse_args() -> argparse.Namespace:
             "evaluated request stream"
         ),
     )
-    parser.add_argument(
-        "--ravel-soft-admission-release-policy",
-        choices=("slo_deadline",),
-        default="slo_deadline",
-        help="latest release boundary for deferred completion-only requests",
-    )
-    parser.add_argument(
-        "--ravel-soft-admission-reserve-sequences",
-        type=int,
-        default=0,
-        help=(
-            "outstanding-sequence reserve before activation; 0 derives one "
-            "replica-equivalent max_num_seqs cohort"
-        ),
-    )
     parser.add_argument("--ravel-assignment-file", default="")
     parser.add_argument("--ravel-assignment-arm", choices=("future_initial", "future_insertion", "future_combined", "selected"), default="future_initial")
     return parser.parse_args()
@@ -177,8 +162,6 @@ def build_system_args(cli: argparse.Namespace) -> SimpleNamespace:
         raise ValueError(f"runtime dimensions must be positive: {invalid}")
     if cli.pending_request_limit < 0 or cli.replica_slo_budget_tokens < 0:
         raise ValueError("derived-limit overrides must be non-negative")
-    if cli.ravel_soft_admission_reserve_sequences < 0:
-        raise ValueError("soft-admission reserve cannot be negative")
     if (
         cli.kv_cache_blocks < 0
         or cli.kv_cache_dtype_bytes < 0
@@ -250,9 +233,6 @@ def build_system_args(cli: argparse.Namespace) -> SimpleNamespace:
         ravel_collective_stage_output_profile=(
             cli.ravel_collective_stage_output_profile
         ),
-        ravel_soft_admission_release_policy=cli.ravel_soft_admission_release_policy,
-        ravel_soft_admission_reserve_sequences=cli.ravel_soft_admission_reserve_sequences,
-        ravel_soft_admission_enabled=True,
         ravel_residual_window=cli.ravel_residual_window,
         ravel_output_quantile=cli.ravel_output_quantile,
         ravel_output_history_window=cli.ravel_output_history_window,

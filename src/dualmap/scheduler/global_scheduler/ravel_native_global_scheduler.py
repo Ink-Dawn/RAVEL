@@ -98,6 +98,9 @@ class Quote:
     residual_guard_s: float
     risk_calibrated: bool
     feasible: bool
+    # Decode pressure estimate used by LATENCY feasibility.  It is kept at
+    # the end with a default for compatibility with older diagnostic callers.
+    predicted_tbt_s: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -170,6 +173,9 @@ class RavelNativeGlobalScheduler(RavelBaseGlobalScheduler):
 
     def __init__(self, num_replicas, shared_state, args):
         super().__init__(num_replicas, shared_state, args)
+        handoff_setter = getattr(shared_state, "set_request_handoff_callback", None)
+        if callable(handoff_setter):
+            handoff_setter(self.on_request_handoff)
         self._recent_arrivals: list[tuple[float, str]] = []
         self._recent_prefix_groups: list[str] = []
         self._prefix_diversity_observed = False
@@ -378,6 +384,7 @@ class RavelNativeGlobalScheduler(RavelBaseGlobalScheduler):
         point_ttft = elapsed + rtt + service
         point_objective = point_ttft
         risk_objective = point_objective
+        predicted_tbt_s = 0.0
         if request._request_type != LATENCY:
             expected_output, upper_output = self._output_token_bounds(
                 request
@@ -396,6 +403,13 @@ class RavelNativeGlobalScheduler(RavelBaseGlobalScheduler):
             risk_objective += (
                 max(0, upper_output - 1) * decode_tpot
             )
+        else:
+            decode_occupancy = (
+                max(1, int(prospective_sequences))
+                if prospective_sequences is not None
+                else self._prospective_sequence_count(request, replica_id)
+            )
+            predicted_tbt_s = cluster.decode_tpot_for(decode_occupancy)
         residual_guard, calibrated = self._residual_bound(
             replica_id, request._request_type
         )
@@ -424,6 +438,7 @@ class RavelNativeGlobalScheduler(RavelBaseGlobalScheduler):
             residual_guard_s=residual_guard,
             risk_calibrated=risk_ready,
             feasible=predicted_objective <= self._limit(request),
+            predicted_tbt_s=predicted_tbt_s,
         )
 
     def _observe_arrival(self, request: Request) -> None:
@@ -606,6 +621,56 @@ class RavelNativeGlobalScheduler(RavelBaseGlobalScheduler):
         request._ttft_residual_track = self.residual_calibration_enabled
         request._objective_residual_track = self.residual_calibration_enabled
         request._cluster_route_feasible = quote.feasible
+        # Keep the most recent planner quote separate from the legacy fields
+        # above.  Replans can overwrite the legacy prediction; this snapshot
+        # is the source used by the handoff callback.
+        request._ravel_last_quote_replica_id = int(quote.replica_id)
+        request._ravel_last_quote_timestamp_s = time.perf_counter()
+        request._ravel_last_quote_predicted_ttft_s = float(
+            quote.predicted_ttft_s
+        )
+        request._ravel_last_quote_predicted_tbt_s = float(
+            quote.predicted_tbt_s
+        )
+        request._ravel_last_quote_point_completion_s = float(
+            quote.point_objective_s
+        )
+        request._ravel_last_quote_risk_completion_s = float(
+            quote.predicted_objective_s
+        )
+        request._ravel_last_quote_feasible = bool(quote.feasible)
+
+    async def on_request_handoff(self, replica_id: int, request: Request) -> None:
+        """Freeze the latest valid quote immediately before engine handoff."""
+
+        handoff_at = time.perf_counter()
+        quote_replica = int(
+            getattr(request, "_ravel_last_quote_replica_id", -1)
+        )
+        valid = quote_replica == int(replica_id)
+        request._ravel_quote_handoff_replica_id = int(replica_id)
+        request._ravel_quote_handoff_timestamp_s = handoff_at
+        request._ravel_quote_handoff_age_s = max(
+            0.0,
+            handoff_at
+            - float(getattr(request, "_ravel_last_quote_timestamp_s", 0.0)),
+        )
+        request._ravel_quote_handoff_predicted_ttft_s = float(
+            getattr(request, "_ravel_last_quote_predicted_ttft_s", 0.0)
+        )
+        request._ravel_quote_handoff_predicted_tbt_s = float(
+            getattr(request, "_ravel_last_quote_predicted_tbt_s", 0.0)
+        )
+        request._ravel_quote_handoff_point_completion_s = float(
+            getattr(request, "_ravel_last_quote_point_completion_s", 0.0)
+        )
+        request._ravel_quote_handoff_risk_completion_s = float(
+            getattr(request, "_ravel_last_quote_risk_completion_s", 0.0)
+        )
+        request._ravel_quote_handoff_feasible = bool(
+            getattr(request, "_ravel_last_quote_feasible", False)
+        )
+        request._ravel_quote_handoff_valid = bool(valid)
 
     async def _enqueue(self, request: Request) -> None:
         quote = self._choose_initial(request)
@@ -1179,6 +1244,7 @@ class RavelNativeMobileInsertionGlobalScheduler(
             ),
             risk_calibrated=request.risk_ready_by_replica[replica_index],
             feasible=feasible,
+            predicted_tbt_s=(decode_tpot_s if request.request_type == LATENCY else 0.0),
         )
 
     @classmethod

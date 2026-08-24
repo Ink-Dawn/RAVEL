@@ -14,17 +14,15 @@ from dualmap.entities.request import Request
 from dualmap.scheduler.global_scheduler.ravel_native_global_scheduler import (
     RavelNativeCenterWorkBalancedGlobalScheduler,
     RavelNativeCenterWorkYieldGlobalScheduler,
-    RavelNativeSLOFlowGlobalScheduler,
+    RavelNativeCenterYieldGlobalScheduler,
 )
 from dualmap.scheduler.global_scheduler.ravel_unified_global_scheduler import (
-    RavelUnifiedAlwaysSoftGlobalScheduler,
     RavelUnifiedBalancedGlobalScheduler,
     RavelUnifiedBoundedLedgerGlobalScheduler,
     RavelUnifiedFlowPlacementGlobalScheduler,
     RavelUnifiedGlobalScheduler,
     RavelUnifiedNoLedgerGlobalScheduler,
     RavelUnifiedPhasePriorityGlobalScheduler,
-    RavelUnifiedStandbyGlobalScheduler,
 )
 from ravel_engine_adapter.protocol import (
     decode_deadline_budget_s,
@@ -179,14 +177,12 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
             block_size=16,
             max_num_batched_tokens=16384,
             ravel_collective_stage_output_profile=str(profile_path),
-            ravel_soft_admission_release_policy="slo_deadline",
-            ravel_soft_admission_reserve_sequences=0,
         )
 
     def tearDown(self):
         self.directory.cleanup()
 
-    def test_completion_soft_planning_avoids_outstanding_threshold(self):
+    def test_completion_pressure_uses_causal_arrival_rate(self):
         shared = FakeSharedState()
         scheduler = RavelUnifiedGlobalScheduler(2, shared, self.args)
         scheduler._workflow_completion_observed = True
@@ -202,10 +198,10 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
         self.assertEqual(scheduler._total_sequence_capacity, 16)
         self.assertLess(scheduler._outstanding_count(), 8)
         self.assertTrue(scheduler._arrival_pressure_observed)
-        self.assertTrue(scheduler._update_soft_epoch())
-        self.assertTrue(scheduler._soft_epoch_active)
+        self.assertTrue(scheduler._update_completion_pressure())
+        self.assertTrue(scheduler._completion_pressure_active)
 
-    def test_low_arrival_pressure_keeps_slo_flow_mode(self):
+    def test_low_arrival_pressure_keeps_default_profile_mode(self):
         scheduler = RavelUnifiedGlobalScheduler(
             2, FakeSharedState(), self.args
         )
@@ -220,45 +216,27 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
         scheduler.global_request_queue.push(0, requests[-1], 0)
 
         self.assertFalse(scheduler._arrival_pressure_observed)
-        self.assertFalse(scheduler._update_soft_epoch())
+        self.assertFalse(scheduler._update_completion_pressure())
 
-    def test_always_soft_avoids_outstanding_threshold_bifurcation(self):
-        scheduler = RavelUnifiedAlwaysSoftGlobalScheduler(
-            2, FakeSharedState(), self.args
-        )
-        scheduler._workflow_completion_observed = True
-        request = make_request(request_id=7)
-        scheduler.global_request_queue.push(0, request, 0)
-
-        self.assertLess(scheduler._outstanding_count(), 8)
-        self.assertTrue(scheduler._update_soft_epoch())
-        self.assertTrue(scheduler._soft_epoch_active)
-
-    def test_soft_epoch_plans_a_lone_late_candidate(self):
+    def test_completion_pressure_replans_a_lone_candidate(self):
         scheduler = RavelUnifiedNoLedgerGlobalScheduler(
             2, FakeSharedState(), self.args
         )
         scheduler._workflow_completion_observed = True
         scheduler._arrival_pressure_observed = True
-        scheduler._soft_epoch_active = True
+        scheduler._completion_pressure_active = True
         request = make_request(request_id=499)
         scheduler.global_request_queue.push(0, request, 0)
 
-        asyncio.run(scheduler._direct_reassign_mobile())
+        self.assertTrue(scheduler.plan_single_mobile_candidate)
 
-        self.assertGreater(scheduler._soft_plan_generation, 0)
-        self.assertEqual(
-            request._ravel_soft_plan_generation,
-            scheduler._soft_plan_generation,
-        )
-
-    def test_mixed_slo_semantics_disable_soft_admission(self):
+    def test_mixed_slo_semantics_disable_completion_pressure_mode(self):
         shared = FakeSharedState(pending_per_replica=8)
         scheduler = RavelUnifiedGlobalScheduler(2, shared, self.args)
         scheduler._workflow_completion_observed = True
         scheduler._non_workflow_observed = True
 
-        self.assertFalse(scheduler._update_soft_epoch())
+        self.assertFalse(scheduler._update_completion_pressure())
 
     def test_mixed_semantics_use_dynamic_chunk_planner(self):
         scheduler = RavelUnifiedGlobalScheduler(
@@ -275,6 +253,41 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
 
         self.assertEqual(result, {})
         dynamic.assert_called_once_with(scheduler, [], None)
+
+    def test_completion_pressure_uses_work_yield_planner(self):
+        scheduler = RavelUnifiedGlobalScheduler(
+            2, FakeSharedState(), self.args
+        )
+        scheduler._workflow_completion_observed = True
+        scheduler._arrival_pressure_observed = True
+        request = make_request(request_id=777)
+        scheduler.global_request_queue.push(0, request, 0)
+        with patch.object(
+            RavelNativeCenterWorkYieldGlobalScheduler,
+            "_plan_mobile_assignment",
+            autospec=True,
+            return_value={},
+        ) as work_yield:
+            result = scheduler._plan_mobile_assignment([request])
+
+        self.assertEqual(result, {})
+        work_yield.assert_called_once_with(scheduler, [request], None)
+        self.assertEqual(request._ravel_soft_plan_generation, -1)
+        self.assertFalse(request._ravel_soft_admission_active)
+
+    def test_full_dispatches_through_center_yield(self):
+        scheduler = RavelUnifiedGlobalScheduler(
+            2, FakeSharedState(), self.args
+        )
+        with patch.object(
+            RavelNativeCenterYieldGlobalScheduler,
+            "_dispatch_schedulable",
+            autospec=True,
+        ) as center_yield:
+            asyncio.run(scheduler._dispatch_schedulable())
+
+        center_yield.assert_awaited_once_with(scheduler)
+        self.assertFalse(hasattr(scheduler, "_dispatch_protected"))
 
     def test_balanced_mixed_semantics_use_flow_time_planner(self):
         scheduler = RavelUnifiedBalancedGlobalScheduler(
@@ -404,7 +417,7 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
             0.0,
         )
 
-    def test_workflow_semantics_use_soft_planning_before_saturation(self):
+    def test_workflow_semantics_enable_completion_pressure_mode(self):
         scheduler = RavelUnifiedGlobalScheduler(
             2, FakeSharedState(), self.args
         )
@@ -413,7 +426,7 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
         request = make_request(request_id=8)
         scheduler.global_request_queue.push(0, request, 0)
 
-        self.assertTrue(scheduler._update_soft_epoch())
+        self.assertTrue(scheduler._update_completion_pressure())
 
     def test_completion_virtual_service_debt_avoids_hotspot(self):
         scheduler = RavelUnifiedGlobalScheduler(
@@ -442,7 +455,7 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
         scheduler._workflow_completion_observed = True
         scheduler._arrival_pressure_observed = True
         request = make_request(output_len=1024)
-        scheduler._apply_soft_output_profile(request)
+        scheduler._apply_completion_output_profile(request)
 
         expected, upper = scheduler._output_token_bounds(request)
 
@@ -456,7 +469,7 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
         scheduler._workflow_completion_observed = True
         scheduler._arrival_pressure_observed = True
         request = make_request(stage_num=4)
-        scheduler._apply_soft_output_profile(request)
+        scheduler._apply_completion_output_profile(request)
 
         expected, upper = scheduler._output_token_bounds(request)
 
@@ -469,33 +482,19 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
         scheduler._workflow_completion_observed = True
         scheduler._arrival_pressure_observed = True
         request = make_request(stage_id=99)
-        scheduler._apply_soft_output_profile(request)
+        scheduler._apply_completion_output_profile(request)
 
         expected, upper = scheduler._output_token_bounds(request)
 
         self.assertEqual((expected, upper), (256, 256))
         self.assertEqual(request._ravel_profile_output_expected, 0)
 
-    def test_deferred_request_releases_at_its_objective_deadline(self):
-        scheduler = RavelUnifiedGlobalScheduler(
-            2, FakeSharedState(), self.args
-        )
-        request = make_request()
-        release_at = scheduler._soft_release_at(request)
-
-        self.assertAlmostEqual(
-            release_at - request._arrived_at,
-            request._slo_constraint[2],
-        )
-
-    def test_balanced_workflow_protected_priority_is_phase_aware(self):
+    def test_balanced_completion_priority_is_never_deferred(self):
         scheduler = RavelUnifiedBalancedGlobalScheduler(
             2, FakeSharedState(), self.args
         )
         request = make_request()
         request._primary_replica = 0
-        request._cluster_route_feasible = True
-        request._ravel_yield_deferred = False
 
         scheduler._set_engine_priority(request)
 
@@ -507,40 +506,7 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
             decode_deadline_budget_s(request._vllm_priority), 0.0
         )
 
-    def test_balanced_workflow_aged_miss_is_not_deferred_twice(self):
-        scheduler = RavelUnifiedBalancedGlobalScheduler(
-            2, FakeSharedState(), self.args
-        )
-        request = make_request()
-        request._primary_replica = 0
-        request._cluster_route_feasible = False
-        request._ravel_yield_deferred = True
-
-        scheduler._set_engine_priority(request)
-
-        self.assertTrue(is_phase_aware_priority(request._vllm_priority))
-        self.assertFalse(
-            is_deferred_phase_priority(request._vllm_priority)
-        )
-
-    def test_balanced_early_slack_release_is_marked_opportunistic(self):
-        scheduler = RavelUnifiedBalancedGlobalScheduler(
-            2, FakeSharedState(), self.args
-        )
-        request = make_request()
-        request._primary_replica = 0
-        request._cluster_route_feasible = False
-        request._ravel_yield_deferred = True
-        request._ravel_soft_admission_slack_release = True
-
-        scheduler._set_engine_priority(request)
-
-        self.assertTrue(is_phase_aware_priority(request._vllm_priority))
-        self.assertTrue(
-            is_deferred_phase_priority(request._vllm_priority)
-        )
-
-    def test_balanced_standby_charges_profile_upper_decode_demand(self):
+    def test_balanced_priority_charges_profile_upper_decode_demand(self):
         scheduler = RavelUnifiedBalancedGlobalScheduler(
             2, FakeSharedState(), self.args
         )
@@ -549,7 +515,6 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
         request._ravel_profile_output_expected = 120
         request._ravel_profile_output_upper = 700
         request._routing_output_tokens_upper_hint_used = 120
-        request._ravel_soft_admission_slack_release = True
 
         scheduler._set_engine_priority(request)
 
@@ -564,29 +529,6 @@ class RavelUnifiedSchedulerTests(unittest.TestCase):
             delta=0.001,
         )
 
-    def test_balanced_does_not_delegate_predeadline_work(self):
-        scheduler = RavelUnifiedBalancedGlobalScheduler(
-            2, FakeSharedState(), self.args
-        )
-
-        self.assertFalse(scheduler._engine_standby_enabled())
-        self.assertFalse(
-            scheduler._protected_cohort_allows(
-                make_request(), 0, [], time.perf_counter()
-            )
-        )
-
-    def test_experimental_standby_delegates_predeadline_work(self):
-        scheduler = RavelUnifiedStandbyGlobalScheduler(
-            2, FakeSharedState(), self.args
-        )
-
-        self.assertTrue(scheduler._engine_standby_enabled())
-        self.assertTrue(
-            scheduler._protected_cohort_allows(
-                make_request(), 0, [], time.perf_counter()
-            )
-        )
 
 
 if __name__ == "__main__":
