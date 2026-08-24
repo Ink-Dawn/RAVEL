@@ -1,25 +1,20 @@
 \subsection*{Abstract}
 
-Geo-distributed LLM serving pools GPU capacity across regions, but WAN
-latency and heterogeneous SLOs make the \emph{value} of regional capacity
-request-dependent: a region that is optional for one request may be the only
-SLO-feasible choice for another. Committing placement immediately preserves
-SLO slack but acts on incomplete demand information, whereas waiting to
-observe subsequent arrivals consumes the very slack needed to meet the SLO.
-
-We present RAVEL, an SLO-aware serving system that separates when demand
-becomes visible from when placement becomes final. RAVEL tentatively assigns
-each request to a serving replica and immediately attributes its prospective
-demand there, while keeping the assignment revisable until successful engine
-handoff. Subsequent arrivals can therefore redirect still-router-owned work
-when scarce capacity is needed by more region-constrained requests. Because
-reassignment ends at handoff, RAVEL requires no migration of engine-managed
-KV state.
-
-We implement RAVEL on vLLM across three geo-distributed clusters connected by
-physical WAN paths. Across conversational, bursty, and completion-oriented
-workloads, RAVEL consistently improves request-level SLO attainment as
-offered load increases. At 16$\times$ load, RAVEL improves request-level SLO attainment over the
-best-SLO baseline by 8.8, 11.2, and 16.6 percentage points on LMSYS, Burst,
-and DeepResearch, respectively, while reducing P95 TTFT by 21.8--69.2\%
-and P95 end-to-end latency by 14.7--34.5\%.
+Regional capacity constraints and rising LLM inference demand are driving providers to pool GPU resources across
+geographically distributed clusters.
+Cross-region scheduling must navigate differences in WAN latency and regional
+serving conditions.
+Together, these regional differences and heterogeneous request-level SLOs make placement feasibility request-specific, so a region that is optional for one request may be the only SLO-feasible choice for another.
+When available capacity is limited, immediately finalizing placement may leave no SLO-feasible capacity for later arrivals.
+Waiting reveals more demand but leaves less time to meet the SLO.
+Conventional cross-region schedulers make a one-shot placement for each request using only the demand
+visible at arrival. Later arrivals cannot revise earlier placements, even when the affected requests have not yet
+entered the serving engine.
+The key observation is that every arrival can enter capacity planning immediately while placement remains revisable
+until engine handoff.
+We present RAVEL, an SLO-aware serving system that realizes this separation through tentative
+placement, immediate demand accounting, and bounded pre-handoff replanning.
+On a vLLM deployment with five serving replicas across three clusters connected by physical
+WAN paths, RAVEL improves request-level SLO attainment over the best baseline for each
+workload by 8.8, 17.2, and 16.6 percentage points on LMSYS, Burst, and DeepResearch,
+respectively, at $16\times$ load.
