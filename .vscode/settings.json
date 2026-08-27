@@ -1,0 +1,33 @@
+{
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk",
+      "command": "D:/LaTeX/MiKTeX/miktex/bin/x64/latexmk.exe",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-pdf",
+        "-outdir=%OUTDIR%",
+        "-auxdir=%OUTDIR%",
+        "%DOC%"
+      ],
+      "env": {
+        "PATH": "D:/LaTeX/StrawberryPerlPortable/perl/bin;D:/LaTeX/MiKTeX/miktex/bin/x64;${env:PATH}",
+        "MIKTEX_USERINSTALL": "D:/LaTeX/MiKTeX",
+        "MIKTEX_USERCONFIG": "D:/LaTeX/MiKTeXConfig",
+        "MIKTEX_USERDATA": "D:/LaTeX/MiKTeXData"
+      }
+    }
+  ],
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk (D drive)",
+      "tools": ["latexmk"]
+    }
+  ],
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.synctex.synctexjs.enabled": true,
+  "latex-workshop.view.pdf.internal.synctex.keybinding": "double-click"
+}

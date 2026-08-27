@@ -1,0 +1,434 @@
+\begin{thebibliography}{10}
+
+\bibitem{cachecraft}
+{\sc Agarwal, S., Sundaresan, S., Mitra, S., Mahapatra, D., Gupta, A., Sharma,
+  R., Kapu, N.~J., Yu, T., and Saini, S.}
+\newblock Cache-craft: Managing chunk-caches for efficient retrieval-augmented
+  generation.
+\newblock {\em Proceedings of the ACM on Management of Data 3}, 3 (2025),
+  1--28.
+
+\bibitem{vidur}
+{\sc Agrawal, A., Kedia, N., Mohan, J., Panwar, A., Kwatra, N., Gulavani,
+  B.~S., Ramjee, R., and Tumanov, A.}
+\newblock {VIDUR}: A large-scale simulation framework for {LLM} inference.
+\newblock In {\em Proceedings of Machine Learning and Systems\/} (2024),
+  vol.~6, pp.~351--366.
+
+\bibitem{sarathi}
+{\sc Agrawal, A., Kedia, N., Panwar, A., Mohan, J., Kwatra, N., Gulavani, B.,
+  Tumanov, A., and Ramjee, R.}
+\newblock Taming {Throughput-Latency} tradeoff in {LLM} inference with
+  {Sarathi-Serve}.
+\newblock In {\em 18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 24)\/} (Santa Clara, CA, July 2024), USENIX Association,
+  pp.~117--134.
+
+\bibitem{deepspeed_inference}
+{\sc Aminabadi, R.~Y., Rajbhandari, S., Awan, A.~A., Li, C., Li, D., Zheng, E.,
+  Ruwase, O., Smith, S., Zhang, M., Rasley, J., and He, Y.}
+\newblock Deepspeed- inference: Enabling efficient inference of transformer
+  models at unprecedented scale.
+\newblock In {\em SC22: International Conference for High Performance
+  Computing, Networking, Storage and Analysis\/} (2022), IEEE, pp.~1--15.
+
+\bibitem{solyx}
+{\sc Bernhard, A., and Katla, N.}
+\newblock Solyx {AI} grid: Hardware-telemetry-aware routing across
+  geographically distributed {GPU} clusters, 2026.
+\newblock arXiv:2606.15050v1.
+
+\bibitem{flashattention2}
+{\sc Dao, T.}
+\newblock Flashattention-2: Faster attention with better parallelism and work
+  partitioning, 2023.
+
+\bibitem{tail_at_scale}
+{\sc Dean, J., and Barroso, L.~A.}
+\newblock The tail at scale.
+\newblock {\em Communications of the ACM 56}, 2 (2013), 74--80.
+
+\bibitem{serverlessllm}
+{\sc Fu, Y., Xue, L., Huang, Y., Brabete, A.-O., Ustiugov, D., Patel, Y., and
+  Mai, L.}
+\newblock {ServerlessLLM}: {Low-Latency} serverless inference for large
+  language models.
+\newblock In {\em 18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 24)\/} (Santa Clara, CA, July 2024), USENIX Association,
+  pp.~135--153.
+
+\bibitem{llm_learning_to_rank}
+{\sc Fu, Y., Zhu, S., Su, R., Qiao, A., Stoica, I., and Zhang, H.}
+\newblock Efficient llm scheduling by learning to rank.
+\newblock In {\em Advances in Neural Information Processing Systems 37\/}
+  (2024), Neural Information Processing Systems Foundation, Inc. (NeurIPS),
+  pp.~59006--59029.
+
+\bibitem{cachedattention}
+{\sc Gao, B., He, Z., Sharma, P., Kang, Q., Jevdjic, D., Deng, J., Yang, X.,
+  Yu, Z., and Zuo, P.}
+\newblock {Cost-Efficient} large language model serving for multi-turn
+  conversations with {CachedAttention}.
+\newblock In {\em 2024 USENIX Annual Technical Conference (USENIX ATC 24)\/}
+  (Santa Clara, CA, July 2024), USENIX Association, pp.~111--126.
+
+\bibitem{firmament}
+{\sc Gog, I., Schwarzkopf, M., Gleave, A., Watson, R. N.~M., and Hand, S.}
+\newblock Firmament: Fast, centralized cluster scheduling at scale.
+\newblock In {\em 12th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 16)\/} (Savannah, GA, Nov. 2016), USENIX Association,
+  pp.~99--115.
+
+\bibitem{swan}
+{\sc Hong, C.-Y., Kandula, S., Mahajan, R., Zhang, M., Gill, V., Nanduri, M.,
+  and Wattenhofer, R.}
+\newblock Achieving high utilization with software-driven wan.
+\newblock {\em ACM SIGCOMM Computer Communication Review 43}, 4 (2013), 15--26.
+
+\bibitem{shuffleinfer}
+{\sc Hu, C., Huang, H., Xu, L., Chen, X., Xu, J., Chen, S., Feng, H., Wang, C.,
+  Wang, S., Bao, Y., Sun, N., and Shan, Y.}
+\newblock Inference without interference: Disaggregate llm inference for mixed
+  downstream workloads, 2024.
+
+\bibitem{b4}
+{\sc Jain, S., Kumar, A., Mandal, S., Ong, J., Poutievski, L., Singh, A.,
+  Venkata, S., Wanderer, J., Zhou, J., Zhu, M., Zolla, J., Hölzle, U., Stuart,
+  S., and Vahdat, A.}
+\newblock {B4}: Experience with a globally-deployed software defined wan.
+\newblock {\em ACM SIGCOMM Computer Communication Review 43}, 4 (2013), 3--14.
+
+\bibitem{vllm}
+{\sc Kwon, W., Li, Z., Zhuang, S., Sheng, Y., Zheng, L., Yu, C.~H., Gonzalez,
+  J.~E., Zhang, H., and Stoica, I.}
+\newblock Efficient memory management for large language model serving with
+  {PagedAttention}.
+\newblock In {\em Proceedings of the ACM SIGOPS 29th Symposium on Operating
+  Systems Principles\/} (2023), SOSP '23, ACM, pp.~611--626.
+
+\bibitem{infinigen}
+{\sc Lee, W., Lee, J., Seo, J., and Sim, J.}
+\newblock {InfiniGen}: Efficient generative inference of large language models
+  with dynamic {KV} cache management.
+\newblock In {\em 18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 24)\/} (Santa Clara, CA, July 2024), USENIX Association,
+  pp.~155--172.
+
+\bibitem{flow_imprecise}
+{\sc Li, W., He, X., Liu, Y., Li, K., Chen, K., Ge, Z., Guan, Z., Qi, H.,
+  Zhang, S., and Liu, G.}
+\newblock Flow scheduling with imprecise knowledge.
+\newblock In {\em 21st USENIX Symposium on Networked Systems Design and
+  Implementation (NSDI 24)\/} (Santa Clara, CA, Apr. 2024), USENIX Association,
+  pp.~95--111.
+
+\bibitem{adaserve}
+{\sc Li, Z., Chen, Z., Delacourt, R., Oliaro, G., Wang, Z., Chen, Q., Lin, S.,
+  Yang, A., Zhang, Z., Chen, Z., Lai, Y.-H., Cheng, X., Miao, X., and Jia, Z.}
+\newblock {AdaServe}: Accelerating multi-{SLO} {LLM} serving with
+  {SLO}-customized speculative decoding.
+\newblock In {\em Proceedings of the 21st European Conference on Computer
+  Systems\/} (2026), EuroSys '26, ACM, pp.~36--54.
+
+\bibitem{alpaserve}
+{\sc Li, Z., Zheng, L., Zhong, Y., Liu, V., Sheng, Y., Jin, X., Huang, Y.,
+  Chen, Z., Zhang, H., Gonzalez, J.~E., and Stoica, I.}
+\newblock {AlpaServe}: Statistical multiplexing with model parallelism for deep
+  learning serving.
+\newblock In {\em 17th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 23)\/} (Boston, MA, July 2023), USENIX Association,
+  pp.~663--679.
+
+\bibitem{lodestar}
+{\sc Lim, G., Zhao, W., Godfrey, B., Shan, J., Xu, L., and Xie, L.}
+\newblock Lodestar: An online-learning llm inference router, 2026.
+
+\bibitem{parrot}
+{\sc Lin, C., Han, Z., Zhang, C., Yang, Y., Yang, F., Chen, C., and Qiu, L.}
+\newblock Parrot: Efficient serving of {LLM-based} applications with semantic
+  variable.
+\newblock In {\em 18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 24)\/} (Santa Clara, CA, July 2024), USENIX Association,
+  pp.~929--945.
+
+\bibitem{liu_layland_edf}
+{\sc Liu, C.~L., and Layland, J.~W.}
+\newblock Scheduling algorithms for multiprogramming in a hard-real-time
+  environment.
+\newblock {\em Journal of the ACM 20}, 1 (1973), 46--61.
+
+\bibitem{andes}
+{\sc Liu, J., Chung, J.-W., Wu, Z., Lai, F., Lee, M., and Chowdhury, M.}
+\newblock Andes: Defining and enhancing quality-of-experience in llm-based text
+  streaming services, 2024.
+
+\bibitem{agentbench}
+{\sc Liu, X., Yu, H., Zhang, H., Xu, Y., Lei, X., Lai, H., Gu, Y., Ding, H.,
+  Men, K., Yang, K., Zhang, S., Deng, X., Zeng, A., Du, Z., Zhang, C., Shen,
+  S., Zhang, T., Su, Y., Sun, H., Huang, M., Dong, Y., and Tang, J.}
+\newblock Agentbench: Evaluating llms as agents, 2025.
+
+\bibitem{quartz}
+{\sc Liu, Z., Zheng, Y., Kong, F., and Zhao, Z.}
+\newblock {QUARTZ}: Quantile-aware routing and queueing for {TTFT} {SLO}s in
+  {LLM} serving.
+\newblock In {\em Findings of the Association for Computational Linguistics:
+  ACL 2026\/} (San Diego, California, United States, July 2026), Association
+  for Computational Linguistics, pp.~37886--37896.
+
+\bibitem{agentix}
+{\sc Luo, M., Shi, X., Cai, C., Zhang, T., Wong, J., Wang, Y., Wang, C., Huang,
+  Y., Chen, Z., Gonzalez, J.~E., and Stoica, I.}
+\newblock Agentix: An efficient serving engine for {LLM} agents as general
+  programs.
+\newblock In {\em 23rd USENIX Symposium on Networked Systems Design and
+  Implementation (NSDI 26)\/} (Renton, WA, May 2026), USENIX Association,
+  pp.~2443--2459.
+
+\bibitem{helix}
+{\sc Mei, Y., Zhuang, Y., Miao, X., Yang, J., Jia, Z., and Vinayak, R.}
+\newblock Helix: Serving large language models over heterogeneous gpus and
+  network via max-flow.
+\newblock In {\em Proceedings of the 30th ACM International Conference on
+  Architectural Support for Programming Languages and Operating Systems, Volume
+  1\/} (2025), ACM, pp.~586--602.
+
+\bibitem{gaia}
+{\sc Mialon, G., Fourrier, C., Swift, C., Wolf, T., LeCun, Y., and Scialom, T.}
+\newblock Gaia: a benchmark for general ai assistants, 2023.
+
+\bibitem{specinfer}
+{\sc Miao, X., Oliaro, G., Zhang, Z., Cheng, X., Wang, Z., Zhang, Z., Wong, R.
+  Y.~Y., Zhu, A., Yang, L., Shi, X., Shi, C., Chen, Z., Arfeen, D., Abhyankar,
+  R., and Jia, Z.}
+\newblock Specinfer: Accelerating large language model serving with tree-based
+  speculative inference and verification.
+\newblock In {\em Proceedings of the 29th ACM International Conference on
+  Architectural Support for Programming Languages and Operating Systems, Volume
+  3\/} (2024), ACM, pp.~932--949.
+
+\bibitem{spotserve}
+{\sc Miao, X., Shi, C., Duan, J., Xi, X., Lin, D., Cui, B., and Jia, Z.}
+\newblock Spotserve: Serving generative large language models on preemptible
+  instances.
+\newblock In {\em Proceedings of the 29th ACM International Conference on
+  Architectural Support for Programming Languages and Operating Systems, Volume
+  2\/} (2024), ACM, pp.~1112--1127.
+
+\bibitem{sparrow}
+{\sc Ousterhout, K., Wendell, P., Zaharia, M., and Stoica, I.}
+\newblock Sparrow: Distributed, low latency scheduling.
+\newblock In {\em Proceedings of the Twenty-Fourth ACM Symposium on Operating
+  Systems Principles\/} (2013), SOSP '13, ACM, pp.~69--84.
+
+\bibitem{splitwise}
+{\sc Patel, P., Choukse, E., Zhang, C., Shah, A., Íñigo Goiri, Maleki, S.,
+  and Bianchini, R.}
+\newblock Splitwise: Efficient generative llm inference using phase splitting.
+\newblock In {\em 2024 ACM/IEEE 51st Annual International Symposium on Computer
+  Architecture (ISCA)\/} (2024), IEEE, pp.~118--132.
+
+\bibitem{pope_scaling_inference}
+{\sc Pope, R., Douglas, S., Chowdhery, A., Devlin, J., Bradbury, J., Levskaya,
+  A., Heek, J., Xiao, K., Agrawal, S., and Dean, J.}
+\newblock Efficiently scaling transformer inference, 2022.
+
+\bibitem{mooncake}
+{\sc Qin, R., Li, Z., He, W., Cui, J., Ren, F., Zhang, M., Wu, Y., Zheng, W.,
+  and Xu, X.}
+\newblock Mooncake: Trading more storage for less computation {\textemdash} a
+  {KVCache-centric} architecture for serving {LLM} chatbot.
+\newblock In {\em 23rd USENIX Conference on File and Storage Technologies (FAST
+  25)\/} (Santa Clara, CA, Feb. 2025), USENIX Association, pp.~155--170.
+
+\bibitem{cassini}
+{\sc Rajasekaran, S., Ghobadi, M., and Akella, A.}
+\newblock {CASSINI}: {Network-Aware} job scheduling in machine learning
+  clusters.
+\newblock In {\em 21st USENIX Symposium on Networked Systems Design and
+  Implementation (NSDI 24)\/} (Santa Clara, CA, Apr. 2024), USENIX Association,
+  pp.~1403--1420.
+
+\bibitem{libra}
+{\sc Ruan, C., Chen, Y., Tian, D., Shi, Y., Wu, Y., Li, J., and Li, C.}
+\newblock Libra: Flexible request partitioning and scheduling for serving
+  unbalanced and dynamic {LLM} workloads.
+\newblock In {\em 23rd USENIX Symposium on Networked Systems Design and
+  Implementation (NSDI 26)\/} (Renton, WA, May 2026), USENIX Association,
+  pp.~1243--1258.
+
+\bibitem{omega}
+{\sc Schwarzkopf, M., Konwinski, A., Abd-El-Malek, M., and Wilkes, J.}
+\newblock Omega: Flexible, scalable schedulers for large compute clusters.
+\newblock In {\em Proceedings of the 8th ACM European Conference on Computer
+  Systems\/} (2013), ACM, pp.~351--364.
+
+\bibitem{slora}
+{\sc Sheng, Y., Cao, S., Li, D., Hooper, C., Lee, N., Yang, S., Chou, C., Zhu,
+  B., Zheng, L., Keutzer, K., Gonzalez, J.~E., and Stoica, I.}
+\newblock {S-LoRA}: Serving thousands of concurrent {LoRA} adapters.
+\newblock In {\em Proceedings of Machine Learning and Systems\/} (2024),
+  vol.~6.
+
+\bibitem{fairness_llm}
+{\sc Sheng, Y., Cao, S., Li, D., Zhu, B., Li, Z., Zhuo, D., Gonzalez, J.~E.,
+  and Stoica, I.}
+\newblock Fairness in serving large language models.
+\newblock In {\em 18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 24)\/} (Santa Clara, CA, July 2024), USENIX Association,
+  pp.~965--988.
+
+\bibitem{preble}
+{\sc Srivatsa, V., He, Z., Abhyankar, R., Li, D., and Zhang, Y.}
+\newblock Preble: Efficient distributed prompt scheduling for {LLM} serving.
+\newblock In {\em The Thirteenth International Conference on Learning
+  Representations\/} (2025).
+
+\bibitem{dejavu}
+{\sc Strati, F., Mcallister, S., Phanishayee, A., Tarnawski, J., and Klimovic,
+  A.}
+\newblock D\'ej\`avu: Kv-cache streaming for fast, fault-tolerant generative
+  llm serving, 2024.
+
+\bibitem{llumnix}
+{\sc Sun, B., Huang, Z., Zhao, H., Xiao, W., Zhang, X., Li, Y., and Lin, W.}
+\newblock Llumnix: Dynamic scheduling for large language model serving.
+\newblock In {\em 18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 24)\/} (Santa Clara, CA, July 2024), USENIX Association,
+  pp.~173--191.
+
+\bibitem{ayo}
+{\sc Tan, X., Jiang, Y., Yang, Y., and Xu, H.}
+\newblock Towards end-to-end optimization of llm-based applications with ayo.
+\newblock In {\em Proceedings of the 30th ACM International Conference on
+  Architectural Support for Programming Languages and Operating Systems, Volume
+  2\/} (2025), ACM, pp.~1302--1316.
+
+\bibitem{gorgo}
+{\sc Toniolo, A.~R., Thorstenson, R., and Dinesh, A.}
+\newblock {GORGO}: Online tuning for cross-region network-aware {LLM} serving,
+  2026.
+\newblock arXiv:2602.11688v3.
+
+\bibitem{revisit_slo_goodput}
+{\sc Wang, Z., Li, S., Zhou, Y., Li, X., Zhang, Z., Cam-Tu, N., Gu, R., Tian,
+  C., Chen, G., and Zhong, S.}
+\newblock Revisiting service level objectives and system level metrics in large
+  language model serving, 2024.
+
+\bibitem{loongserve}
+{\sc Wu, B., Liu, S., Zhong, Y., Sun, P., Liu, X., and Jin, X.}
+\newblock Loongserve: Efficiently serving long-context large language models
+  with elastic sequence parallelism.
+\newblock In {\em Proceedings of the ACM SIGOPS 30th Symposium on Operating
+  Systems Principles\/} (2024), ACM, pp.~640--654.
+
+\bibitem{dlora}
+{\sc Wu, B., Zhu, R., Zhang, Z., Sun, P., Liu, X., and Jin, X.}
+\newblock {dLoRA}: Dynamically orchestrating requests and adapters for {LoRA}
+  {LLM} serving.
+\newblock In {\em 18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 24)\/} (Santa Clara, CA, July 2024), USENIX Association,
+  pp.~911--927.
+
+\bibitem{autogen}
+{\sc Wu, Q., Bansal, G., Zhang, J., Wu, Y., Li, B., Zhu, E., Jiang, L., Zhang,
+  X., Zhang, S., Liu, J., Awadallah, A.~H., White, R.~W., Burger, D., and Wang,
+  C.}
+\newblock Autogen: Enabling next-gen llm applications via multi-agent
+  conversation, 2023.
+
+\bibitem{skylb}
+{\sc Xia, T., Mao, Z., Kerney, J., Jackson, E.~J., Li, Z., Xing, J., Shenker,
+  S., and Stoica, I.}
+\newblock {SkyWalker}: A locality-aware cross-region load balancer for {LLM}
+  inference.
+\newblock In {\em Proceedings of the 21st European Conference on Computer
+  Systems\/} (2026), EuroSys '26, ACM, pp.~1349--1364.
+
+\bibitem{kvlink}
+{\sc Yang, J., Hou, B., Wei, W., Bao, Y., and Chang, S.}
+\newblock Kvlink: Accelerating large language models via efficient kv cache
+  reuse.
+\newblock In {\em Advances in Neural Information Processing Systems 38\/}
+  (2025), Neural Information Processing Systems Foundation, Inc. (NeurIPS),
+  pp.~148312--148339.
+
+\bibitem{cacheblend}
+{\sc Yao, J., Li, H., Liu, Y., Ray, S., Cheng, Y., Zhang, Q., Du, K., Lu, S.,
+  and Jiang, J.}
+\newblock Cacheblend: Fast large language model serving for rag with cached
+  knowledge fusion.
+\newblock In {\em Proceedings of the Twentieth European Conference on Computer
+  Systems\/} (2025), ACM, pp.~94--109.
+
+\bibitem{chunkattention}
+{\sc Ye, L., Tao, Z., Huang, Y., and Li, Y.}
+\newblock Chunkattention: Efficient self-attention with prefix-aware kv cache
+  and two-phase partition.
+\newblock In {\em Proceedings of the 62nd Annual Meeting of the Association for
+  Computational Linguistics (Volume 1: Long Papers)\/} (2024), Association for
+  Computational Linguistics, pp.~11608--11620.
+
+\bibitem{orca}
+{\sc Yu, G.-I., Jeong, J.~S., Kim, G.-W., Kim, S., and Chun, B.-G.}
+\newblock Orca: A distributed serving system for {Transformer-Based} generative
+  models.
+\newblock In {\em 16th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 22)\/} (Carlsbad, CA, July 2022), USENIX Association,
+  pp.~521--538.
+
+\bibitem{dualmap}
+{\sc Yuan, Y., Zuo, P., Wang, B., Chen, Z., Tan, Z., and Yu, Z.}
+\newblock {DualMap}: Enabling both cache affinity and load balancing for
+  distributed {LLM} serving.
+\newblock In {\em The Fourteenth International Conference on Learning
+  Representations\/} (2026).
+
+\bibitem{delayscheduling}
+{\sc Zaharia, M., Borthakur, D., Sarma, J.~S., Elmeleegy, K., Shenker, S., and
+  Stoica, I.}
+\newblock Delay scheduling: A simple technique for achieving locality and
+  fairness in cluster scheduling.
+\newblock In {\em Proceedings of the 5th European Conference on Computer
+  Systems\/} (2010), EuroSys '10, ACM, pp.~265--278.
+
+\bibitem{simple_is_better}
+{\sc Zhang, D., Han, J., Zhang, K., Wei, X., Shen, S., Fang, C., Yu, W., Zhou,
+  J., and Chen, R.}
+\newblock Simple is better: Multiplication may be all you need for llm request
+  scheduling, 2026.
+
+\bibitem{jitserve}
+{\sc Zhang, W., Wu, Z., Mu, Y., Ning, R., Liu, B., Sarda, N., Lee, M., and Lai,
+  F.}
+\newblock {JITServe}: {SLO-aware} {LLM} serving with imprecise request
+  information.
+\newblock In {\em 23rd USENIX Symposium on Networked Systems Design and
+  Implementation (NSDI 26)\/} (Renton, WA, May 2026), USENIX Association,
+  pp.~825--848.
+
+\bibitem{sglang}
+{\sc Zheng, L., Yin, L., Xie, Z., Sun, C., Huang, J., Yu, C., Cao, S.,
+  Kozyrakis, C., Stoica, I., Gonzalez, J., Barrett, C., and Sheng, Y.}
+\newblock Sglang: Efficient execution of structured language model programs.
+\newblock In {\em Advances in Neural Information Processing Systems 37\/}
+  (2024), Neural Information Processing Systems Foundation, Inc. (NeurIPS),
+  pp.~62557--62583.
+
+\bibitem{distserve}
+{\sc Zhong, Y., Liu, S., Chen, J., Hu, J., Zhu, Y., Liu, X., Jin, X., and
+  Zhang, H.}
+\newblock {DistServe}: Disaggregating prefill and decoding for
+  goodput-optimized large language model serving.
+\newblock In {\em 18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI 24)\/} (Santa Clara, CA, July 2024), USENIX Association,
+  pp.~193--210.
+
+\bibitem{webarena}
+{\sc Zhou, S., Xu, F.~F., Zhu, H., Zhou, X., Lo, R., Sridhar, A., Cheng, X.,
+  Ou, T., Bisk, Y., Fried, D., Alon, U., and Neubig, G.}
+\newblock Webarena: A realistic web environment for building autonomous agents,
+  2024.
+
+\end{thebibliography}

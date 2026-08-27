@@ -25,11 +25,12 @@
 \usepackage{tabularx}
 \usepackage{array}
 \usepackage{makecell}
-\usepackage{usenix,epsfig,endnotes}
+\usepackage{usenix,epsfig}
 \usepackage{amsmath}
 \usepackage{booktabs}
 \usepackage{makecell}
 \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
 \usepackage{tabularx}
 \usepackage{xcolor}
 
@@ -71,29 +72,25 @@
 
 \subsection*{Abstract}
 
-Geo-distributed LLM serving pools GPU capacity across regions, but WAN
-latency and heterogeneous SLOs make the \emph{value} of regional capacity
-request-dependent: a region that is optional for one request may be the only
-SLO-feasible choice for another. Committing placement immediately preserves
-SLO slack but acts on incomplete demand information, whereas waiting to
-observe subsequent arrivals consumes the very slack needed to meet the SLO.
-
-We present RAVEL, an SLO-aware serving system that separates when demand
-becomes visible from when placement becomes final. RAVEL tentatively assigns
-each request to a serving replica and immediately attributes its prospective
-demand there, while keeping the assignment revisable until successful engine
-handoff. Subsequent arrivals can therefore redirect still-router-owned work
-when scarce capacity is needed by more region-constrained requests. Because
-reassignment ends at handoff, RAVEL requires no migration of engine-managed
-KV state.
-
-We implement RAVEL on vLLM across three geo-distributed clusters connected by
-physical WAN paths. Across conversational, bursty, and completion-oriented
-workloads, RAVEL consistently improves request-level SLO attainment as
-offered load increases. At 16$\times$ load, RAVEL improves request-level SLO attainment over the
-best-SLO baseline by 8.8, 11.2, and 16.6 percentage points on LMSYS, Burst,
-and DeepResearch, respectively, while reducing P95 TTFT by 21.8--69.2\%
-and P95 end-to-end latency by 14.7--34.5\%.
+Regional capacity constraints and rising LLM inference demand are driving providers to pool GPU resources across
+geographically distributed clusters.
+Cross-region scheduling must navigate differences in WAN latency and regional
+serving conditions.
+Together, these regional differences and heterogeneous request-level SLOs make placement feasibility request-specific, so a region that is optional for one request may be the only SLO-feasible choice for another.
+When available capacity is limited, immediately finalizing placement may leave no SLO-feasible capacity for later arrivals.
+Waiting reveals more demand but leaves less time to meet the SLO.
+Conventional cross-region schedulers make a one-shot placement for each request using only the demand
+visible at arrival. Later arrivals cannot revise earlier placements, even when the affected requests have not yet
+entered the serving engine.
+The key observation is that every arrival can enter capacity planning immediately while placement remains revisable
+until engine handoff.
+We present RAVEL, an SLO-aware serving system that realizes this separation through tentative
+placement, immediate demand accounting, and bounded pre-handoff replanning.
+On a vLLM deployment with five serving replicas across three clusters connected by physical
+WAN paths, RAVEL improves request-level SLO attainment over the best baseline
+by 8.8, 11.2, and 13.4 percentage points on LMSYS, Burst, and DeepResearch,
+respectively, while reducing P95 TTFT by 49.1--80.5\% and P95 end-to-end
+latency by 15.5--56.8\%, at $16\times$ load.
 
 
 
@@ -113,243 +110,262 @@ and P95 end-to-end latency by 14.7--34.5\%.
 \section{Introduction}
 \label{sec:introduction}
 
-LLM serving is increasingly expanding beyond scheduling replicas within a
-single cluster toward pooling inference capacity across geographically
-distributed clusters~\cite{skylb,gorgo,solyx}.
-Geo-distribution gives a service more capacity choices, but also makes the
-choice of serving site consequential: a placement determines not only GPU load
-and cache locality, but also the WAN path and remote serving conditions a
-request encounters.
-At the same time, serving traffic has become increasingly heterogeneous.
+Geo-distributed LLM serving expands available GPU capacity, but not every
+region is equally useful to every request.
+Large-scale private WANs expose heterogeneous inter-region paths
+~\cite{b4,swan}, while distributed inference systems must additionally
+contend with heterogeneous accelerator, serving, and network conditions
+~\cite{helix,cassini,skylb,gorgo,solyx}.
+Together with heterogeneous request-level SLOs, these differences make
+regional capacity request-dependent: a region that is merely attractive for
+one request may be the only SLO-feasible choice for another.
+A placement therefore determines not only GPU load and cache locality, but
+also the WAN path and remote serving conditions experienced by the request.
 Interactive requests may impose tight time-to-first-token (TTFT) and
 time-between-token (TBT) bounds, whereas longer-running or multi-stage
-requests may instead be governed by end-to-end completion deadlines
-~\cite{distserve,jitserve}.
-The combination of geographic and SLO heterogeneity means that available GPU
-capacity is not equally useful to every request.
+requests may instead be governed by end-to-end completion or
+quality-of-experience objectives
+~\cite{distserve,jitserve,quartz,andes,revisit_slo_goodput}.
+Consequently, allocating regional capacity well requires reasoning about both
+current serving conditions and the SLO-feasible alternatives available to
+each request.
 
-Existing distributed and geo-distributed routers therefore make increasingly
-informed placement decisions, incorporating load, network latency, cache
-locality, and request-level SLOs when choosing where an arrival should
-execute~\cite{preble,dualmap,skylb,gorgo,quartz}.
-These mechanisms improve the destination selected for the request and system
-state visible \emph{now}.
-We find, however, that heterogeneous SLOs create an additional online
-allocation problem: a placement that is locally attractive for the current
-request can consume regional capacity that a later request may be unable to
+Existing distributed routers improve \emph{where} an arriving request should
+execute using signals such as serving load, cache locality, WAN conditions,
+request-level SLOs, and adaptive routing feedback
+~\cite{preble,dualmap,skylb,gorgo,quartz,lodestar}.
+However, these routing abstractions largely couple destination selection with
+commitment: once a request is assigned using the currently visible state,
+later arrivals generally do not influence that placement before execution
+begins.
+This coupling creates an additional online allocation problem.
+A locally attractive placement for the current request can consume
+SLO-feasible capacity that a later, more region-constrained request cannot
 replace.
-The relevant question is therefore not only
+The missing question is therefore not only
 \emph{where should this request execute?}, but also
-\emph{when should an earlier placement become final?}
+\emph{when should an earlier placement become irreversible?}
 
-Consider two serving regions, $A$ and $B$, and two requests, $r_1$ and $r_2$.
-Let $\mathcal{F}_i$ denote the set of regions in which request $i$ can satisfy
-its SLO.
-Suppose
-$\mathcal{F}_1=\{A,B\}$, while
-$\mathcal{F}_2=\{A\}$.
-When $r_1$ arrives first, $A$ may be its faster destination, making an
-assignment to $A$ locally preferable.
-Doing so, however, can consume the only SLO-feasible capacity available to
-$r_2$ when it arrives shortly afterward; assigning $r_1$ to $B$ instead can
-allow both requests to succeed.
-\emph{Region $A$ is merely faster for $r_1$, but it is essential for $r_2$.}
-Thus, the \emph{value} of regional capacity is request-dependent:
-capacity that is interchangeable for a flexible request may be indispensable
-to a more region-constrained one.
-Consequently, optimizing each placement independently need not maximize
-request-level SLO attainment.
+A two-request example shows why early commitment can waste SLO-feasible
+capacity.
+Consider two serving regions, $A$ and $B$.
+The first request, $r_1$, can satisfy its SLO in either region, whereas a
+later request, $r_2$, can succeed only in $A$.
+When $r_1$ arrives first, $A$ may appear faster and therefore be selected by a
+locally optimal router.
+If $r_2$ arrives shortly afterward, however, this decision has consumed its
+only feasible capacity.
+Placing $r_1$ in $B$ instead would allow both requests to succeed:
+\emph{region $A$ is merely faster for $r_1$, but it is essential for $r_2$}.
+Thus, optimizing requests independently can reduce aggregate request-level
+SLO attainment even when each individual placement appears reasonable when
+it is made.
 
-The difficulty is temporal rather than merely predictive.
-When $r_1$ arrives, even an accurate router can estimate only the demand and
-serving state visible at that time; it cannot know whether a more constrained
-request such as $r_2$ will arrive next.
-Making the placement final immediately preserves SLO slack, but can lock in an
-allocation before this information becomes available.
-A natural alternative is to wait for subsequent arrivals before deciding,
-as in delayed-scheduling and late-binding approaches
-~\cite{delayscheduling,sparrow}.
-For SLO-constrained inference, however, this information is not free:
-every millisecond spent waiting also consumes the same SLO budget needed for
-WAN transfer, queueing, and inference.
-We refer to this tension as the
-\emph{information--slack tradeoff}.
-Figure~\ref{fig:motivation} makes the tradeoff visible empirically.
-Fixed-delay late binding can improve SLO attainment when a short wait exposes
-useful arrivals, but increasing the delay eventually erodes those gains as
-more SLO slack is consumed.
+Delaying commitment can reveal the second request, but observation consumes
+the same SLO slack needed for WAN transfer, queueing, and inference.
+A fixed-delay late-binding policy can therefore observe more demand before
+placing a request, yet every millisecond of added deferral also reduces the
+time remaining to satisfy that request's SLO.
+We call this tension the \emph{information--slack tradeoff}.
+Figure~\ref{fig:motivation} illustrates it empirically:
+a short fixed deferral can expose useful arrivals and improve SLO attainment,
+but the benefit saturates as the deferral consumes an increasing fraction of
+request SLO budgets.
+This leaves a design opportunity between immediate one-shot placement and
+fixed-delay late binding: make arrived demand visible immediately while
+preserving only bounded, request-specific placement revisability.
 
-RAVEL is built around a simple observation:
-\emph{waiting to finalize placement need not mean waiting to account for
-demand}.
-Rather than treating placement as a single atomic decision, RAVEL separates
-when an arrival becomes visible to capacity planning from when its destination
-becomes final.
-On arrival, RAVEL tentatively assigns the request to a serving replica and
-immediately attributes its prospective demand to that replica.
-Later requests therefore observe the demand of earlier arrivals even while
-those earlier placements remain revisable.
-When additional observation is useful, RAVEL can selectively keep eligible
-non-LATENCY requests router-owned for a short, request-specific mobility hold
-bounded by both remote RTT and predicted SLO slack.
-Unlike fixed-delay late binding, these requests are already placed and
-accounted during the hold.
-New arrivals may then trigger bounded replanning of still-router-owned
-requests.
-A placement becomes final only after successful engine handoff; because RAVEL
-stops reassignment at this boundary, it never needs to migrate
-engine-managed KV state.
+RAVEL's key insight is that deferred commitment does not require deferred
+accounting.
+Rather than treating placement as one atomic decision, RAVEL separates when a
+request begins influencing capacity planning from when its destination becomes
+final.
+On arrival, RAVEL obtains replica-specific SLO quotes, selects a tentative
+serving replica, and immediately attributes the request's prospective demand
+to that replica.
+Later arrivals therefore observe earlier demand even while the corresponding
+placements remain revisable.
+While an eligible request remains Router-owned, newly revealed demand may
+trigger bounded replanning and transfer both its tentative ownership and
+prospective charge to another replica.
+The placement becomes final only after successful engine handoff.
+By stopping reassignment at this explicit boundary, RAVEL preserves
+pre-handoff flexibility without migrating engine-managed KV state.
 
-Realizing this abstraction requires addressing three systems challenges.
-First, RAVEL must determine which replicas remain SLO-feasible for each
-request under heterogeneous WAN delays, engine backlog, Prefill and Decode
-interference, and request-specific success criteria.
-RAVEL addresses this using calibrated, replica-specific SLO quotes derived
-from live serving state.
-Second, tentative work must influence subsequent decisions without becoming
-double-counted or stale when its placement changes.
-RAVEL therefore maintains prospective accounting whose queue ownership and
-replica-dependent charges move with a reassignment.
-Third, retaining revisability cannot require repeatedly optimizing over all
-outstanding requests or allowing a deep engine queue to hide work from the
-router.
-RAVEL limits expensive replanning to a bounded router-owned cohort and keeps
-the engine-visible frontier shallow, while SLO-specific admission and local
-Prefill control preserve latency-sensitive execution constraints.
+Realizing this separation safely and efficiently requires three capabilities.
+First, RAVEL must determine which replicas remain SLO-feasible under
+heterogeneous WAN delays, engine backlog, Prefill and Decode interference, and
+request-specific success criteria.
+It addresses this challenge with calibrated, replica-specific SLO quotes
+derived from live serving state.
+Second, tentative work must affect subsequent decisions without becoming
+double-counted or stale after reassignment.
+RAVEL therefore maintains transferable prospective accounting whose ownership
+and replica-dependent charges move atomically with each tentative placement.
+Third, revisability must not require repeatedly optimizing over every
+outstanding request or delaying work indefinitely.
+RAVEL restricts expensive replanning to a bounded Router-owned cohort and ends
+all placement revision at the engine-handoff boundary.
+Together, these mechanisms retain useful online flexibility while bounding the
+latency and state-management costs introduced by the control plane.
 
 We implement RAVEL as an asynchronous routing layer for
-vLLM~\cite{vllm} and evaluate it on five serving replicas across three
+vLLM~\cite{vllm} and evaluate it using five serving replicas across three
 clusters connected by physical WAN paths.
 Our experiments cover conversational traffic, bursty arrivals, and
 completion-oriented demand over six offered-load levels.
-At $16\times$ load, RAVEL improves request-level SLO attainment over the
-best-SLO baseline by \textbf{8.8}, \textbf{17.2}, and
-\textbf{16.6 percentage points} on LMSYS, Burst, and DeepResearch,
+At $16\times$ load, RAVEL improves request-level SLO attainment over DualMap
+by \textbf{8.8}, \textbf{11.2}, and
+\textbf{13.4 percentage points} on LMSYS, Burst, and DeepResearch,
 respectively.
-Across the same three workloads, it reduces P95 TTFT by
-\textbf{21.8--69.2\%} relative to the corresponding best-SLO baseline.
-On Burst, for example, RAVEL increases SLO attainment from 62.0\% to 79.2\%
-while reducing P95 TTFT from 8.70\,s to 2.68\,s and P95 end-to-end latency
-from 28.68\,s to 18.78\,s.
-Its online replanning path remains millisecond-scale, with a measured P95
+At the same load, it reduces P95 TTFT by
+\textbf{49.1--80.5\%} relative to DualMap.
+The online replanning path remains millisecond-scale, with a measured P95
 scheduling-pass latency of 2.10\,ms at Burst $12\times$ load.
 
 In summary, this paper makes three contributions:
 \begin{itemize}
     \item
-    We identify the \emph{request-dependent value of regional capacity} in
-    geo-distributed LLM serving: heterogeneous SLOs make capacity
-    interchangeable for some requests but essential for others, so optimizing
-    placements independently can reduce aggregate request-level SLO
-    attainment.
+    We identify the \emph{request-dependent value of regional capacity} and
+    the resulting \emph{information--slack tradeoff}: committing too early
+    ignores demand revealed by later arrivals, whereas waiting too long
+    consumes the SLO slack needed for successful execution.
 
     \item
     We introduce an \emph{immediate-accounting, deferred-commitment}
-    abstraction that makes arrived demand visible immediately while retaining
-    pre-handoff placement revisability.
-    RAVEL realizes this abstraction through replica-specific SLO quotes,
-    transferable prospective accounting, slack-bounded mobility, and bounded
-    cohort replanning.
+    abstraction and realize it through replica-specific SLO quotes,
+    transferable prospective accounting, bounded pre-handoff replanning, and
+    an explicit engine-handoff commitment boundary.
 
     \item
     We implement RAVEL on vLLM and evaluate it on a physical-WAN deployment,
-    showing substantial SLO-attainment gains across heterogeneous,
-    bursty, and completion-oriented workloads while keeping online replanning
-    at millisecond-scale latency.
+    demonstrating consistent SLO-attainment improvements across
+    conversational, bursty, and completion-oriented workloads while retaining
+    millisecond-scale online planning overhead.
 \end{itemize}
+
+
+
 
 \section{Problem and Design Opportunity}
 \label{sec:problem}
 
-We distinguish three concepts that are often coupled in request routing:
-\emph{placement}, \emph{regional demand accounting}, and
-\emph{commitment}.
-A placement is the serving region currently associated with a request.
+The design opportunity arises from separating three decisions that request
+routing often couples: \emph{placement}, \emph{regional demand accounting},
+and \emph{commitment}.
+A placement associates a request with a candidate serving replica and,
+therefore, with the region containing that replica.
 Regional demand accounting attributes an arrived request's prospective work
-to a region so that the request influences subsequent placement decisions.
-Commitment, by contrast, is the point after which RAVEL no longer revises
+to its tentative replica and region so that the request influences subsequent
+placement decisions.
+Commitment is the boundary after which the routing layer no longer revises
 that placement.
-RAVEL chooses successful handoff to the serving engine as this boundary:
-requests remain reassignable while they are router-owned, whereas their
-placement becomes final after handoff.
+Using only causally available information, the router seeks to maximize the
+fraction of requests that satisfy all applicable request-level SLOs.
+RAVEL chooses successful handoff to the serving engine as its commitment
+boundary: a request remains reassignable while it is Router-owned and becomes
+final only after handoff.
 This is a deliberate control-plane boundary rather than an inherent
-irreversibility property of LLM execution; it lets RAVEL revise placement
-without coordinating migration of engine-managed request state.
+irreversibility property of LLM execution; it preserves placement flexibility
+without requiring migration of engine-managed KV state.
+
 
 
 \subsection{Request-Dependent Regional Feasibility}
 \label{sec:problem:feasibility}
 
-Geo-distributed serving exposes each request to different WAN and serving
-conditions depending on its destination.
-At the same time, requests differ in the SLO constraints they must satisfy.
-For request $i$ and serving region $c$, let
-$\Phi_{i,c}(t)$ indicate whether, using information available at time $t$,
-region $c$ is predicted to satisfy all SLO constraints applicable to $i$.
+Prior SLO-aware serving systems show that whether a request can meet its
+latency objective depends on both request-specific requirements and evolving
+serving conditions~\cite{distserve,jitserve,quartz,andes}.
+RAVEL makes this dependence explicit at the geographic placement layer:
+SLO feasibility is specific to a request, candidate replica, and decision
+time rather than a static property of a region.
+
+Let $c$ denote a serving region, $\mathcal{R}_c$ the replicas in that region,
+and $r\in\mathcal{R}_c$ a candidate replica.
+For request $i$, let $\Phi_{i,r}(t)$ indicate whether replica $r$ is predicted,
+using only information available at time $t$, to satisfy every SLO constraint
+applicable to $i$.
 This prediction depends on the request's SLO semantics and remaining slack,
-its estimated service demand, the WAN path to $c$, and the currently observed
-serving conditions at that region.
+its estimated service demand, the WAN path to region $c$, and the currently
+observed serving state at replica $r$.
+Because both serving state and remaining slack evolve over time,
+$\Phi_{i,r}(t)$ is an online feasibility estimate rather than a guarantee:
+future arrivals and prediction error may still change the realized outcome.
 Section~\ref{sec:design:feasibility} describes how RAVEL constructs these
-predictions at replica granularity.
+replica-level predictions.
 
 We define the feasible-region set of request $i$ as
 \begin{equation}
     \mathcal{F}_i(t)
     =
     \left\{
-        c \mid \Phi_{i,c}(t)=1
+        c
+        \;\middle|\;
+        \exists r\in\mathcal{R}_c:
+        \Phi_{i,r}(t)=1
     \right\}.
     \label{eq:problem:feasible-set}
 \end{equation}
-The time dependence is important.
-Even if network and serving conditions remain unchanged,
-$\mathcal{F}_i(t)$ may shrink while a request waits because the waiting time
-itself consumes remaining SLO slack.
+The time index captures two distinct sources of change.
+First, new arrivals and accounting updates alter the serving state visible to
+the router, so $\mathcal{F}_i(t)$ may expand or shrink as contention changes.
+Second, even if network and serving conditions remain unchanged, elapsed time
+consumes TTFT or completion slack and can therefore remove regions from the
+feasible set.
 
-Feasible sets characterize how substitutable regional capacity is for a
-request.
-A request with many feasible regions has several serving alternatives,
-whereas a request with a small feasible set may depend on capacity in only one
-or two regions.
-Consequently, assigning scarce SLO-feasible capacity to broadly feasible work
-can remove the only viable option for more region-constrained requests.
-Regional capacity is therefore not equally substitutable across requests, and
-optimizing request--region assignments independently need not maximize
-aggregate request-level SLO attainment.
+The size and composition of $\mathcal{F}_i(t)$ characterize how substitutable
+regional capacity is for request $i$.
+A request with several feasible regions has multiple serving alternatives,
+whereas a request with a small feasible set depends on comparatively scarce
+regional capacity.
+For example, if
+$\mathcal{F}_1=\{A,B\}$ and $\mathcal{F}_2=\{A\}$,
+assigning request 1 to region $A$ may consume the only feasible option
+available to request 2, even though request 1 could instead execute in $B$.
+Thus, the opportunity cost of assigning capacity in a region depends on which
+requests can substitute away from that region.
+Regional capacity is therefore request-dependent, and optimizing
+request--region assignments independently need not maximize aggregate
+request-level SLO attainment.
 
 
 \subsection{The Information--Slack Tradeoff}
 \label{sec:problem:tradeoff}
 
-The difficulty is that this scarcity is revealed online.
-When a request arrives, the router observes only the requests and system state
-available at that time.
-Subsequent arrivals may reveal that capacity tentatively allocated earlier is
-more valuable to newly arrived, region-constrained requests.
-Thus, the desirable allocation can change while earlier requests are still
-waiting to execute.
+The allocation problem is online: the router must make decisions without
+observing future arrivals.
+A placement that is reasonable under the currently visible state may become
+undesirable after a more region-constrained request arrives.
+This setting shares concerns with low-latency online and shared-state cluster
+scheduling, where decisions must be made from incomplete and continually
+changing information
+~\cite{sparrow,flow_imprecise,omega,firmament}.
+RAVEL does not assume an arrival oracle or attempt to reproduce an offline
+optimal allocation; instead, it preserves bounded revisability using only
+causally observed requests and serving state.
 
-Table~\ref{tab:problem:operating-points} separates three operating points by
-when arrived demand becomes visible to regional planning and when placement
+The relevant operating points differ along two independent axes:
+when arrived demand becomes visible to capacity planning and when placement
 becomes final.
-A conventional one-shot router assigns an arriving request immediately:
-its demand is attributed to a region at once, but the placement is not revised
-after that routing decision.
+Table~\ref{tab:problem:operating-points} separates these decisions.
+A one-shot operating point assigns and accounts for a request immediately and
+does not subsequently revise that placement.
 At the other extreme, our diagnostic LateBind-$\tau$ policy keeps a request
-centrally unassigned for $\tau$, then observes the current state and makes a
-single placement decision.
-LateBind-$\tau$ therefore postpones both regional demand attribution and
-placement commitment.
-RAVEL targets the remaining operating point: it attributes demand
-immediately, while keeping the tentative placement revisable until engine
+centrally unassigned and unaccounted for a fixed interval $\tau$, then observes
+the current state and makes a single final placement.
+RAVEL occupies the remaining operating point: it makes the request's demand
+visible immediately while retaining placement revisability until engine
 handoff.
-
-
 
 \begin{table}[t]
     \centering
     \small
-    \caption{Accounting and placement-finality operating points.}
+    \caption{
+    Demand-visibility and placement-finality operating points.
+    One-shot couples both decisions at arrival, LateBind-$\tau$ delays both,
+    and RAVEL exposes demand immediately while deferring only commitment.
+    }
     \label{tab:problem:operating-points}
 
     \renewcommand{\arraystretch}{1.25}
@@ -361,41 +377,56 @@ handoff.
     }
         \toprule
         \textbf{Policy} &
-        \textbf{Demand accounting} &
-        \textbf{Placement finality} \\
+        \makecell{\textbf{Demand}\\\textbf{visible}} &
+        \makecell{\textbf{Placement}\\\textbf{final}} \\
         \midrule
-        One-shot        & Immediate & Immediate \\
-        LateBind-$\tau$ & Deferred  & Deferred  \\
-        RAVEL           & Immediate & Deferred  \\
+        One-shot        & At arrival   & At routing        \\
+        LateBind-$\tau$ & After $\tau$ & After $\tau$      \\
+        RAVEL           & At arrival   & At engine handoff \\
         \bottomrule
     \end{tabular*}
 \end{table}
 
-Deferring a decision can expose useful information, but that information has a
-direct cost under request SLOs.
-Holding request $i$ for $\tau$ consumes $\tau$ of the same budget needed for
-WAN transfer, queueing, and inference.
-A longer delay may therefore expose more subsequent demand while
+Deferring commitment can reveal information about later demand, but that
+information is not free under request-level SLOs.
+Delay scheduling similarly shows that waiting can expose better placement
+opportunities~\cite{delayscheduling}, while deadline-driven scheduling
+emphasizes the cost of consuming finite execution slack
+~\cite{liu_layland_edf}.
+Tail-sensitive distributed services further motivate treating latency slack
+as a scarce resource rather than an unlimited observation window
+~\cite{tail_at_scale}.
+In geo-distributed LLM serving, these effects interact directly:
+holding request $i$ for $\tau$ consumes $\tau$ of its available TTFT or
+completion slack, leaving less time for WAN transfer, queueing, and inference.
+A longer delay may therefore reveal more subsequent demand while
 simultaneously reducing the set of regions in which the held request can still
 succeed.
 Equivalently, $\mathcal{F}_i(t)$ can shrink purely because the router waits,
-even without any increase in serving load.
-We refer to this tension as the
-\emph{information--slack tradeoff}.
-Figure~\ref{fig:motivation} illustrates it empirically:
-short fixed deferral can sometimes improve placement, whereas additional
-waiting eventually erodes SLO attainment.
+even without an increase in serving load.
 
-The resulting design opportunity is to separate
-\emph{when an arrived request begins influencing regional capacity planning}
-from
-\emph{when its placement becomes final}.
-Doing so requires three capabilities:
-RAVEL must determine request-specific SLO feasibility,
-transfer prospective demand accounting when a tentative placement changes,
-and bound both deliberate holding and multi-request replanning so that the
-control mechanism does not itself consume excessive SLO slack.
-Section~\ref{sec:design} describes how RAVEL realizes these requirements.
+We refer to this tension as the \emph{information--slack tradeoff}.
+Figure~\ref{fig:motivation} illustrates it empirically:
+short fixed deferral can improve SLO attainment by exposing useful arrivals,
+but the benefit saturates and eventually reverses as waiting consumes an
+increasing fraction of request SLO budgets.
+The design opportunity is therefore not simply to delay placement longer.
+It is to make arrived demand visible immediately while deferring only
+placement finality.
+
+Exploiting this opportunity requires preserving useful revisability without
+introducing unbounded waiting, inconsistent accounting, or unsafe ownership
+transitions.
+A practical design must
+(i) estimate request-specific SLO feasibility,
+(ii) account each tentative request exactly once and transfer its prospective
+charge when placement changes,
+(iii) bound both deliberate observation and multi-request replanning, and
+(iv) enforce a failure-safe commitment boundary at engine handoff.
+Section~\ref{sec:design} describes how RAVEL satisfies these requirements.
+```
+
+
 
 
 \section{RAVEL Design}
@@ -405,69 +436,112 @@ Section~\ref{sec:design} describes how RAVEL realizes these requirements.
     \centering
     \includegraphics[width=\textwidth]{RAVEL_System_cropped.pdf}
     \caption{
-    \textbf{RAVEL system overview.}
-    RAVEL immediately accounts each request at a tentative replica while
-    keeping the placement revisable during the router-owned phase.
-    Successful engine handoff finalizes the placement; subsequent engine
-    state informs later decisions.
+    \textbf{RAVEL request lifecycle and ownership boundary.}
+    RAVEL combines each request's prompt and SLO with calibrated service
+    profiles and live replica state to construct request-specific replica
+    quotes.
+    It then creates a virtual placement and immediately attributes the
+    request's prospective demand to its tentative replica.
+    While the request remains Router-owned, subsequent arrivals may trigger
+    bounded reassignment together with an atomic transfer of its prospective
+    accounting.
+    Capacity-gated dispatch initiates engine handoff; only a successful
+    handoff makes placement final.
+    Pending, running, and completed engine state continuously feeds back into
+    later quotes and accounting updates.
     }
     \label{fig:ravel-overview}
 \end{figure*}
 
 
-
-
 \subsection{Overview}
 \label{sec:design:overview}
 
-RAVEL separates when an arrived request begins influencing capacity planning
-from when its placement becomes final.
-As shown in Figure~\ref{fig:ravel-overview}, an arrival is first evaluated
-against the available replicas, tentatively assigned to one replica, and
-immediately incorporated into RAVEL's prospective demand state.
-While the request remains router-owned, later arrivals may trigger bounded
-replanning of that assignment.
-Successful handoff to the selected serving engine makes the placement final;
-pending and running engine state then continues to inform later decisions.
+RAVEL realizes immediate accounting and deferred commitment through two
+ownership states separated by successful engine handoff.
+While Router-owned, each request has exactly one tentative replica owner and
+one set of prospective charges; after handoff, its placement is final and is
+no longer eligible for Router-level reassignment.
+This ownership boundary lets RAVEL exploit newly observed demand without
+migrating engine-managed KV state.
 
-The design follows directly from the requirements in
-Section~\ref{sec:problem}.
-Replica SLO quotes determine request-specific feasibility
-(Section~\ref{sec:design:feasibility});
-prospective accounting makes tentative demand visible before commitment
-(Section~\ref{sec:design:accounting});
-bounded replanning preserves controlled pre-handoff flexibility
-(Section~\ref{sec:design:replanning});
-and SLO-specific placement and admission allocate scarce serving capacity
-before the handoff boundary
-(Sections~\ref{sec:design:policy} and~\ref{sec:design:commitment}).
+Figure~\ref{fig:ravel-overview} summarizes the request lifecycle.
+On arrival, RAVEL constructs request-specific SLO quotes for all candidate
+replicas, selects an initial virtual placement, and immediately accounts the
+request's prospective demand at that replica.
+As later arrivals and engine feedback change the visible state, RAVEL may
+replan a bounded cohort of still-Router-owned requests.
+A reassignment transfers both tentative queue ownership and replica-dependent
+prospective charges.
+Requests cross a shallow, capacity-gated dispatch frontier before handoff.
+A rejected handoff restores Router ownership, whereas successful handoff
+transfers ownership to the serving engine and makes placement final.
+
+The design maintains five invariants.
+First, each Router-owned request has exactly one tentative owner.
+Second, its prospective demand is represented exactly once and follows any
+reassignment.
+Third, only Router-owned requests may change placement.
+Fourth, replanning uses only causally observed requests and serving state and
+is bounded in both observation time and cohort size.
+Finally, successful engine handoff is the only commitment event.
+The following subsections describe replica quotes, prospective accounting,
+bounded replanning, unified placement and reversible dispatch, and the
+handoff boundary that enforces these invariants.
 
 
+```latex
 \subsection{Replica SLO Quotes}
 \label{sec:design:feasibility}
 
-A single load score is insufficient under heterogeneous SLOs.
-A lightly loaded replica may still be infeasible once WAN delay and remaining
-slack are considered, and lower TTFT cannot compensate for violating a hard
-TBT constraint.
-RAVEL therefore separates \emph{estimating} a request--replica assignment
-from \emph{choosing} that assignment.
-Let $c\in\mathcal C$ denote a serving cluster,
-$\mathcal R_c$ its replicas, and $c(r)$ the cluster containing replica $r$.
-For request $i$ and candidate replica $r$, a
-\emph{replica SLO quote} predicts the SLO-relevant cost and feasibility of
-assigning $i$ to $r$ from calibrated service profiles, WAN RTT, live engine
-state, router-owned work, and elapsed time.
+Every placement decision consumes a \emph{replica SLO quote}: a causal,
+request-specific summary of whether a candidate replica is predicted to
+satisfy the request's SLO and of the cost of serving it there.
+Quotes provide a common placement interface across heterogeneous request
+semantics without collapsing TTFT, TBT, and completion constraints into an
+arbitrary weighted score.
+Prior phase-aware serving systems show that Prefill and Decode have distinct
+resource demands and can interfere under shared execution
+~\cite{sarathi,distserve,splitwise,shuffleinfer}.
+RAVEL incorporates these effects into replica-specific feasibility estimates
+rather than introducing a new phase scheduler.
 
-At active Decode concurrency $n$, RAVEL models Prefill service as
-$P_{c,n}(p)=b_{c,n}+a_{c,n}p$ and denotes calibrated post-first-token Decode
-time per token by $d_c(n)$.
-Let $\widehat S^{\mathrm{pre}}_{i,r}$ denote the predicted Prefill-side
-service before $i$ receives its first token.
-It includes observed engine-side Prefill debt, router-owned prompt work ahead
-of $i$, and $i$'s own prompt work; tentative assignments made earlier in the
-same planning pass enter this state immediately.
-RAVEL predicts
+Let $c\in\mathcal{C}$ denote a serving cluster,
+$\mathcal{R}_c$ its replicas, $c(r)$ the cluster containing replica $r$, and
+$\mathcal{R}=\bigcup_c\mathcal{R}_c$.
+For request $i$ and candidate replica $r$, RAVEL constructs
+\begin{equation}
+    Q_{i,r}(t)
+    =
+    \left(
+        \Phi_{i,r}(t),
+        \widehat{T}^{\mathrm{obj}}_{i,r}(t),
+        \mathbf{z}_{i,r}(t)
+    \right),
+    \label{eq:ravel-quote}
+\end{equation}
+where $\Phi_{i,r}(t)$ indicates whether all SLO constraints applicable to
+request $i$ are predicted to hold,
+$\widehat{T}^{\mathrm{obj}}_{i,r}(t)$ is the request-class-specific predicted
+objective used for ordering and slack calculations, and
+$\mathbf{z}_{i,r}(t)$ contains secondary capacity-pressure signals used by the
+placement policy.
+The quote depends only on information causally available at time $t$ and is an
+online prediction rather than a formal SLO guarantee.
+
+RAVEL combines calibrated cluster-level service profiles with replica-local
+live and prospective state.
+At active Decode concurrency $n$, it models Prefill service for a prompt of
+size $p$ as
+$P_{c,n}(p)=b_{c,n}+a_{c,n}p$ and uses $d_c(n)$ for the calibrated
+post-first-token Decode time per token.
+For request $i$ and candidate replica $r$, let
+$\widehat{S}^{\mathrm{pre}}_{i,r}$ denote its predicted Prefill-side service
+delay.
+This estimate includes live engine Prefill debt, Router-owned prompt work ahead
+of $i$, the request's own prompt demand, and tentative assignments selected
+earlier in the current planning pass.
+RAVEL then predicts
 \begin{equation}
     \widehat{\mathrm{TTFT}}_{i,r}(t)
     =
@@ -475,19 +549,20 @@ RAVEL predicts
     +
     \rho_{o_i,c(r)}
     +
-    \widehat S^{\mathrm{pre}}_{i,r},
+    \widehat{S}^{\mathrm{pre}}_{i,r},
     \label{eq:ravel-ttft}
 \end{equation}
-where $a_i$ is the arrival time and $\rho_{o_i,c(r)}$ is the RTT from the
-request origin to cluster $c(r)$.
-The elapsed term makes feasibility explicitly slack-dependent: a replica that
-is feasible at arrival can cease to be feasible while the request waits.
+where $a_i$ is the request arrival time and
+$\rho_{o_i,c(r)}$ is the directed WAN delay from request origin $o_i$ to
+cluster $c(r)$.
+The elapsed term $(t-a_i)$ directly charges time already spent under Router
+ownership against the remaining TTFT budget.
+Thus, even with unchanged WAN and serving conditions, a previously feasible
+replica may become infeasible as observation consumes request slack.
 
-For Decode, RAVEL uses a conservative prospective sequence count
-$m_{i,r}$ over router-owned, engine-pending, and running requests, logically
-deduplicating request IDs.
 For a LATENCY request with TTFT and TBT bounds
-$D_i^{\mathrm{TTFT}}$ and $D_i^{\mathrm{TBT}}$, replica $r$ is feasible iff
+$D_i^{\mathrm{TTFT}}$ and $D_i^{\mathrm{TBT}}$, RAVEL evaluates the two
+constraints independently:
 \begin{equation}
     \Phi^{\mathrm{lat}}_{i,r}(t)
     =
@@ -497,231 +572,215 @@ $D_i^{\mathrm{TTFT}}$ and $D_i^{\mathrm{TBT}}$, replica $r$ is feasible iff
         \;\land\;
         d_{c(r)}(m_{i,r})
         \le D_i^{\mathrm{TBT}}
-    \right].
+    \right],
     \label{eq:ravel-latency-feasible}
 \end{equation}
-RAVEL keeps TTFT and TBT as separate success constraints.
-A normalized scalar incorporating Decode pressure is used only to order
-otherwise comparable placements and never replaces
-Equation~\ref{eq:ravel-latency-feasible}.
+where $m_{i,r}$ conservatively summarizes live and prospective Decode
+concurrency while logically deduplicating request identifiers.
+Feasibility therefore requires both bounds to hold: a lower predicted TTFT
+cannot compensate for a predicted TBT violation.
 
-Completion-oriented requests instead require total-service estimates.
-RAVEL distinguishes request-visible expected and conservative output demands,
-$L_i^{\mathrm{exp}}$ and $L_i^{\mathrm{risk}}$:
-\begin{align}
-    \widehat T^{\mathrm{point}}_{i,r}
-    &=
-    \widehat{\mathrm{TTFT}}_{i,r}
-    +(L_i^{\mathrm{exp}}-1)d_{c(r)}(m_{i,r}),
-    \nonumber\\
-    \widehat T^{\mathrm{risk}}_{i,r}
-    &=
-    \widehat{\mathrm{TTFT}}_{i,r}
-    +(L_i^{\mathrm{risk}}-1)d_{c(r)}(m_{i,r}).
-    \label{eq:ravel-completion-estimates}
-\end{align}
-Outside completion soft admission, feasibility uses the conservative estimate:
+Completion-oriented requests instead require a prediction of total
+request-visible service time.
+RAVEL distinguishes expected output demand
+$L_i^{\mathrm{exp}}$ from a conservative risk estimate
+$L_i^{\mathrm{risk}}$.
+Let $\widehat{T}^{\mathrm{risk}}_{i,r}(t)$ denote the predicted completion
+latency obtained from TTFT and the Decode service implied by
+$L_i^{\mathrm{risk}}$.
+Completion feasibility is
 \begin{equation}
     \Phi^{\mathrm{comp}}_{i,r}(t)
     =
     \mathbf{1}\!\left[
-        \widehat T^{\mathrm{risk}}_{i,r}(t)
+        \widehat{T}^{\mathrm{risk}}_{i,r}(t)
         \le D_i^{\mathrm{comp}}
     \right].
     \label{eq:ravel-completion-feasible}
 \end{equation}
-During completion soft admission, RAVEL may use an expected-output profile
-constructed offline from held-out data and indexed only by request-visible
-workflow metadata.
-The evaluated request's realized generation length is never exposed to the
-Router.
-Appendix~\ref{sec:appendix:quotes} gives the full Prefill expansion,
-profile construction, prospective-count semantics, and ordering objectives.
+The risk estimate gates feasibility, while the expected estimate contributes
+to shared service-pressure accounting.
+Separating the two avoids using an optimistic estimate to admit unsafe
+placements while also avoiding systematic over-accounting of prospective
+demand.
+Under sustained completion pressure, RAVEL may instead use a held-out,
+request-visible expected-output profile when constructing completion quotes;
+Section~\ref{sec:design:policy} describes this adaptation.
+Neither future arrivals nor the evaluated request's realized output length is
+visible to the Router.
+
+Appendix~\ref{sec:appendix:quotes} gives the complete quote equations,
+service-profile calibration procedure, runtime source of every quote term,
+output-demand fallbacks, and the exact construction of
+$\widehat{T}^{\mathrm{obj}}_{i,r}$ and $\mathbf{z}_{i,r}$.
+```
 
 
-\subsection{Prospective Regional Demand Accounting}
+
+\subsection{Immediate and Transferable Demand Accounting}
 \label{sec:design:accounting}
 
-Later arrivals can exploit tentative placements only if already-arrived work
-is visible before commitment.
-Waiting until handoff to account for that work would hide current demand,
-whereas committing merely to expose it would remove the flexibility RAVEL
-seeks to preserve.
-RAVEL therefore combines
-\emph{queue-based accounting}, which captures router-side Prefill queueing,
-with \emph{virtual accounting}, which captures replica-dependent service
-pressure not represented by queue position alone.
+Revisability is safe only if tentative demand remains visible exactly once.
+RAVEL therefore associates every Router-owned request with one tentative
+replica queue and one set of replica-dependent prospective charges.
+This makes the request visible immediately without making its placement
+final.
 
-When request $i$ is tentatively assigned to replica $r$, it belongs to $r$'s
-router-owned queue and its full prompt work immediately contributes to later
-quotes.
-Earlier tentative assignments within the same cohort likewise update the
-planning state seen by later candidates.
-Each router-owned request belongs to exactly one replica queue, preventing its
-prompt work from being represented at multiple tentative destinations.
+When request $i$ receives a virtual placement at replica $r$, it enters
+$r$'s Router-owned queue.
+Its prompt contributes to the queue-ahead Prefill work observed by later
+quotes, including quotes constructed later in the same planning pass.
+The planner additionally maintains lightweight signals for profiled
+completion-service pressure and LATENCY/TBT pressure.
+These prospective signals complement rather than replace live engine pending
+and running state.
 
-\begin{table}[t]
-    \centering
-    \small
-    \caption{Prospective planning state used by RAVEL.}
-    \label{tab:ravel-demand-state}
-    \begin{tabular}{@{}llll@{}}
-        \toprule
-        Signal & Per-request & Aggregate & Role \\
-        \midrule
-        Prefill & $p_i$ & $W^{\mathrm{ahead}}_{i,r}$ & Queueing \\
-        Service & $s^{\mathrm{own}}_{i,r}$ & $L_r$ & Service balance \\
-        TBT & $u_{i,r}$ & $A_r$ & Admission balance \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-Prompt work alone does not capture heterogeneous service demand.
-RAVEL therefore associates request $i$ with a replica-dependent own-service
-charge
+If request $i$ moves from replica $r$ to $r'$, RAVEL transfers its queue
+ownership and recomputes all replica-dependent charges for the new target.
+For a virtual ledger $Z$ with request-specific charge $z_{i,r}$, the transfer
+is conceptually
 \begin{equation}
-    s^{\mathrm{own}}_{i,r}
-    =
-    b_{c(r),n_r}
-    +a_{c(r),n_r}p_i
-    +
-    \begin{cases}
-        (L_i^{\mathrm{exp}}-1)d_{c(r)}(m_{i,r}),
-            & \text{completion},\\
-        0,   & \text{LATENCY}.
-    \end{cases}
-    \label{eq:ravel-own-service}
-\end{equation}
-This charge excludes engine backlog and queue-ahead work and represents only
-the profiled service induced by $i$.
-RAVEL accumulates these charges in $L_r$, an active-request virtual service
-load.
-The charge transfers with reassignment, persists through engine handoff, and
-is released at terminal completion.
-
-LATENCY requests additionally contribute
-$u_{i,r}=d_{c(r)}(1)/D_i^{\mathrm{TBT}}$ to a lightweight per-replica
-TBT-admission balancing signal $A_r$.
-$A_r$ is cumulative over the scheduler instance and transfers with
-reassignment rather than request completion; it is distinct from live Decode
-occupancy represented by $m_{i,r}$ and engine state.
-
-Accounting follows tentative ownership.
-If request $i$ moves from replica $r$ to $r'$, an applicable virtual ledger
-$Z$ is updated conceptually as
-\[
     Z_r \leftarrow Z_r-z_{i,r},
     \qquad
-    Z_{r'} \leftarrow Z_{r'}+z_{i,r'},
-\]
-with the destination charge recomputed for $r'$.
-Router-queue ownership moves with the request as well.
-Reassignment transfers ownership rather than preserving a physical queue
-position: at the target replica, the request participates in the normal
-planning-deadline and SLO-aware dispatch order.
-Thus, prospective demand follows tentative placement without making that
-placement final.
+    Z_{r'} \leftarrow Z_{r'}+z_{i,r'}.
+    \label{eq:ravel-account-transfer}
+\end{equation}
+The source removal and destination addition occur atomically on the
+serialized control path.
+A planning snapshot therefore never observes the request at both replicas or
+at neither replica.
+The request joins the destination's normal planning order rather than
+retaining its previous physical queue position.
+
+Successful handoff ends Router queue ownership but does not erase the
+request's effect on later decisions.
+Its active-service charge remains until terminal completion, while
+replica-reported pending and running state continues to inform subsequent
+quotes.
+Request identifiers are logically deduplicated wherever live and prospective
+state refer to the same request.
+Rejected handoff restores Router ownership and its prospective state; terminal
+completion releases the tracked charge and may trigger another planning pass.
+
+Together, queue ownership and prospective accounting establish RAVEL's central
+accounting invariant:
+\emph{tentative work is immediately visible, but visibility does not make its
+placement final}.
+Appendix~\ref{sec:appendix:accounting} specifies the exact charges, lifecycle
+operations, atomicity rules, and stale-callback protection.
 
 
-\subsection{Bounded Replanning}
+\subsection{Bounded Observation and Replanning}
 \label{sec:design:replanning}
 
-Continuously reconsidering every outstanding request would expose the largest
-possible reassignment set, but would also increase control-plane cost and
-placement churn while SLO slack is being consumed.
-RAVEL instead replans event-by-event over a bounded movable cohort.
-Only router-owned requests may change placement; engine-owned work is fixed
-but continues to influence replica quotes.
+RAVEL replans only when newly observed information may change an uncommitted
+assignment, and it bounds both the movable set and the observation delay.
+A trigger starts a planning pass, eligibility determines which requests may
+move, and neither event changes the commitment boundary.
 
-Replanning triggers and mobility eligibility are distinct.
-LATENCY arrivals request an immediate pass, although a LATENCY request itself
-is mobile only when another cluster contains an SLO-feasible replica.
-A non-LATENCY arrival with no mobility hold also triggers replanning;
-otherwise its hold expiration does.
-Release of active virtual service and completion soft-admission scheduling can
-likewise request another pass.
+Only Router-owned requests are eligible for reassignment.
+Committed engine-owned work remains fixed but continues to affect later
+quotes.
+RAVEL also excludes requests with no alternative SLO-feasible target.
+Planning is event-driven rather than continuous: arrivals, mobility-hold
+expiration, relevant engine feedback, request termination, and rejected
+handoff may request a pass.
+Multiple requests for replanning are serialized and may be coalesced.
 
-For selected non-LATENCY requests, RAVEL exposes a short
-\emph{mobility hold}.
-RAVEL declares an \emph{RTT-scale burst} when the latest observed
-inter-arrival gap is no larger than the largest positive RTT from the request
-origin to a remote serving cluster.
-For request $i$, define arrival slack as
-\[
-    \sigma_i^{\mathrm{arr}}
-    =
-    \max\!\left\{
-        0,\,
-        \Delta_i
-        -
-        \min_r \widehat T^{\mathrm{obj}}_{i,r}(a_i)
-    \right\},
-\]
-where $\Delta_i$ is the applicable TTFT or completion planning budget.
-If an RTT-scale burst is observed, at least two clusters contain an
-SLO-feasible replica, and $i$ is non-LATENCY, RAVEL sets
+\paragraph{Slack-bounded mobility hold.}
+For selected non-LATENCY requests, RAVEL preserves a short observation window
+before dispatch.
+The request is already virtually placed and accounted; the hold only keeps it
+Router-owned long enough for nearby arrivals to expose whether its tentative
+capacity assignment should change.
+
+Let
+$\sigma_i^{\mathrm{arr}}=
+\max\{0,\Delta_i-\min_r\widehat{T}^{\mathrm{obj}}_{i,r}(a_i)\}$
+denote arrival-time planning slack, where $\Delta_i$ is the applicable TTFT or
+completion planning budget.
+For a hold-eligible request,
 \begin{equation}
     h_i
     =
-    \min\!\left\{
-        \rho_i^{\min},
-        \sigma_i^{\mathrm{arr}}
-    \right\},
+    \begin{cases}
+        \min\!\left\{
+            \rho_i^{\min},
+            \sigma_i^{\mathrm{arr}}
+        \right\},
+        & \text{if $i$ is hold-eligible},\\
+        0,
+        & \text{otherwise},
+    \end{cases}
     \label{eq:ravel-mobility-hold}
 \end{equation}
-where $\rho_i^{\min}$ is the minimum positive RTT to a remote serving cluster;
-otherwise $h_i=0$.
+where $\rho_i^{\min}$ is the minimum positive RTT to a remote serving cluster.
+Eligibility requires a causally detected RTT-scale burst, at least two
+SLO-feasible regions, and a non-LATENCY request.
 LATENCY requests always use $h_i=0$.
-The RTT bound keeps deliberate observation on a network timescale, while the
-slack bound prevents RAVEL from intentionally waiting beyond the predicted
-budget available to the request.
-This is a bounded control choice rather than an optimality claim.
+The RTT bound limits deliberate observation to a network timescale, while the
+slack bound prevents the hold from intentionally exceeding the request's
+predicted planning slack.
 
-A held request is already tentatively placed and prospectively accounted.
-Hold expiration only makes the request dispatch-eligible; it does not make
-the placement final.
-If handoff does not occur, the request remains router-owned and may continue
-to participate in replanning.
+Hold expiration is not commitment.
+It makes a request dispatch-eligible, but the request remains revisable until
+successful handoff.
+This distinguishes RAVEL from fixed-delay late binding: held requests are
+already placed and accounted throughout the observation interval.
 
-At each pass, RAVEL orders eligible requests by
-$\kappa_i=(a_i+\Delta_i,a_i,id_i)$ and sends a bounded prefix of at most $K$
-requests to normal multi-request placement.
-Completion soft admission may expand this cohort up to aggregate sequence
-capacity.
-Non-candidates retain their current owners as fixed planning context.
-Candidate extraction may inspect router queues, so $K$ bounds the expensive
-placement computation rather than every scheduling operation.
-Within the cohort, earlier assignments update pass-local state before later
-candidates are evaluated.
+\paragraph{Bounded cohort.}
+Each planning pass orders movable requests by
+\begin{equation}
+    \kappa_i
+    =
+    (a_i+\Delta_i,\;a_i,\;id_i)
+    \label{eq:ravel-planning-order}
+\end{equation}
+and ordinarily considers a prefix of at most $K$ candidates.
+Requests outside the cohort retain their tentative owners and enter the
+planning snapshot as fixed context.
+Within the cohort, every selected placement immediately updates pass-local
+prospective state before the next candidate is evaluated.
 
+Under completion pressure, the effective bound expands from $K$ to the
+deployment's finite aggregate sequence capacity.
+With $R=|\mathcal{R}|$ candidate replicas and effective cohort bound
+$K_{\mathrm{eff}}$, one greedy pass performs
+$O(K_{\mathrm{eff}}R)$ request--replica quote comparisons.
+Completion pressure changes the amount of Router-owned state reconsidered,
+not the placement algorithm or ownership boundary.
 
-\begin{algorithm}[t]
+Algorithm~\ref{alg:ravel-control} summarizes the transitions that must
+preserve RAVEL's invariants: immediate arrival-time accounting, bounded
+reassignment, and failure-safe handoff.
+
+\begin{algorithm}[!t]
 \caption{\textsc{RAVEL} Router Control Loop}
 \label{alg:ravel-control}
 \small
 
 \Fn{\textnormal{\textsc{OnArrival}}($i$)}{
     $Q_i \gets \textsc{QuoteReplicas}(i)$\;
-    $r_i \gets \textsc{InitialPlacement}(i,Q_i)$\;
+    $r_i \gets \textsc{InitialVirtualPlacement}(i,Q_i)$\;
     \textsc{AssignAndAccount}($i,r_i$)\;
     \tcp{Demand becomes visible immediately}
+
     $h_i \gets \textsc{MobilityHold}(i,Q_i)$\;
-    \If{$h_i = 0$}{
+    \If{$h_i=0$ \textbf{or} \textsc{CompletionPressure}()}{
         \textsc{RequestReplan}()\;
     }
     \Else{
         \textsc{ArmReplan}($h_i$)\;
-        \tcp{Placement remains revisable}
     }
 }
 
 \BlankLine
 
 \Fn{\textnormal{\textsc{Replan}}()}{
-    $C \gets \textsc{MovableCohort}()$\;
-    \tcp{Only Router-owned work is movable}
-    $X \gets \textsc{PlaceBySLOMode}(C)$\;
-    \For{$i \in C$}{
+    $C \gets \textsc{BoundedMovableCohort}()$\;
+    \tcp{Only Router-owned work is revisable}
+    $X \gets \textsc{SLOAwareGreedyPlace}(C)$\;
+    \For{$i\in C$}{
         \textsc{TransferOrRefresh}($i,X_i$)\;
     }
 }
@@ -729,7 +788,7 @@ candidates are evaluated.
 \BlankLine
 
 \Fn{\textnormal{\textsc{Dispatch}}($i$)}{
-    \If{\textsc{Held}($i$) \textbf{or} \textsc{AdmissionBlocks}($i$)}{
+    \If{\textsc{Held}($i$) \textbf{or} \textsc{FrontierBlocks}($i$)}{
         \Return\;
     }
 
@@ -737,12 +796,12 @@ candidates are evaluated.
     \textsc{RemoveFromRouterQueue}($i$)\;
     $s \gets \textsc{AttemptHandoff}(i,r)$\;
 
-    \If{$s = \textsc{Rejected}$}{
+    \If{$s=\textsc{Rejected}$}{
         \textsc{RestoreRouterOwnership}($i,r$)\;
     }
-    \ElseIf{$s = \textsc{Committed}$}{
+    \ElseIf{$s=\textsc{Committed}$}{
         \textsc{FinalizePlacement}($i,r$)\;
-        \tcp{Successful handoff ends mobility}
+        \tcp{Successful handoff makes placement final}
     }
     \Else{
         \textsc{SurfaceFailureAfterCleanup}($i$)\;
@@ -750,641 +809,731 @@ candidates are evaluated.
 }
 \end{algorithm}
 
+Appendix~\ref{sec:appendix:replanning} gives the exact trigger predicates,
+eligibility filters, hold predicate, reassignment limits, full planning
+pseudocode, and configured complexity bounds.
 
-\subsection{SLO-Specific Placement and Admission}
+
+\subsection{Unified SLO-Aware Placement and Reversible Dispatch}
 \label{sec:design:policy}
 
-RAVEL selects its policy path using request-visible SLO and workflow semantics,
-not workload names.
-A multi-stage COLLECTIVE request is treated as workflow-completion traffic.
-Mode selection is monotonic within a scheduler instance: a run may begin in
-the completion-oriented path, but observing any request outside this predicate
-switches subsequent placement to the mixed path for the remainder of that
-instance.
-This keeps completion-specific control scoped to runs that remain
-semantically pure.
+Replica quotes identify which targets remain SLO-feasible; the placement
+policy determines how scarce feasible capacity is allocated among them.
+RAVEL uses one deterministic lexicographic policy for both initial placement
+and bounded cohort replanning.
+Request classes affect the feasibility and objective fields exposed by a
+quote, but do not change the placement algorithm that consumes it.
 
-Completion \emph{soft admission} is narrower still.
-It activates only for a pure workflow-completion stream after enough arrivals
-have been observed for their measured rate to imply that aggregate sequence
-capacity would fill within a pressure horizon equal to half of the tightest
-observed completion budget, with a one-second minimum.
-The exact sample and activation thresholds are given in
-Appendix~\ref{sec:appendix:completion-policy}.
+\paragraph{Initial and cohort placement.}
+On arrival, RAVEL constructs a quote for every candidate replica.
+If at least one replica is predicted feasible, RAVEL selects among feasible
+targets using capacity-pressure, efficiency, and stability signals.
+If no replica is predicted feasible, it first minimizes normalized predicted
+SLO violation and only then considers lower-priority efficiency signals.
+Unlike cache-aware routers that jointly optimize reusable KV state and load
+~\cite{preble,dualmap}, RAVEL treats prefix locality as a late tie-breaker:
+cache affinity cannot override request-level SLO feasibility.
 
-\paragraph{Mixed TTFT/TBT traffic.}
-The mixed path follows one principle:
-\emph{preserve request-level SLO safety before balancing capacity}.
-Its deterministic lexicographic placement has three conceptual tiers.
-First, \emph{SLO safety} compares request-level feasibility, prospective
-engine-admission overflow, and normalized objective and TTFT violation
-pressure.
-Second, \emph{capacity pressure} uses prospective TBT-admission and profiled
-service signals to balance otherwise comparable targets.
-Finally, \emph{efficiency and stability} consider normalized predicted
-objective, convex marginal service, and placement movement.
-Candidates are processed greedily in planning-deadline order, with each
-selection updating the state seen by later candidates.
-RAVEL therefore uses a bounded SLO-first online pass rather than an exact
-global assignment solver or a fitted weighted score.
-Appendix~\ref{sec:appendix:mixed-policy} gives the exact deterministic key.
+Replanning applies the same placement policy to a bounded movable cohort.
+Requests are processed in the order defined by
+Equation~\ref{eq:ravel-planning-order}.
+Each request is evaluated against the fixed system context together with the
+tentative assignments already selected earlier in the current pass.
+After selecting a target, RAVEL immediately updates the pass-local
+prospective state before evaluating the next request.
+Later requests therefore observe the demand induced by earlier tentative
+choices rather than reasoning from a stale pre-pass snapshot.
 
-Tentative placement remains separate from engine admission.
-RAVEL keeps the engine-visible Prefill frontier shallow so that excess work
-remains router-owned and hence reassignable.
-When LATENCY Decode is active, the serving adapter uses the tightest active
-TBT requirement and a conservative calibrated Prefill envelope to bound the
-next Chunked-Prefill quantum.
+The placement key has three lexicographic tiers.
+First, \emph{SLO safety} prioritizes predicted feasibility and, when no target
+is feasible, minimizes normalized predicted violation.
+Second, \emph{capacity pressure} considers prospective sequence-capacity
+headroom, profiled completion-service pressure, and LATENCY/TBT pressure so
+that broadly substitutable work does not unnecessarily consume scarce
+SLO-feasible capacity.
+Third, \emph{efficiency and stability} consider the request-specific predicted
+objective, marginal service cost, placement movement, prefix locality, and
+deterministic replica identity.
+Because these tiers are lexicographically ordered, a lower-priority load,
+locality, or stability benefit cannot compensate for an avoidable SLO miss.
+Appendix~\ref{sec:appendix:placement-key} gives the exact implementation key,
+normalization rules, and tie-breaking direction.
+
+\paragraph{Completion-pressure adaptation.}
+Completion pressure changes the amount of Router-owned work reconsidered and
+the completion-demand estimate supplied to the common planner; it does not
+introduce a second placement or dispatch policy.
+Using only causally observed arrivals and serving state, RAVEL detects
+sustained workflow-completion pressure and expands the movable cohort from
+the ordinary bound $K$ to the deployment's finite aggregate sequence
+capacity.
+When a held-out semantic profile indexed only by request-visible workflow
+metadata is available, RAVEL may also replace the ordinary conservative
+output-demand estimate with the profile's expected-output estimate when
+constructing completion quotes.
+These adaptations change planner inputs and the amount of reconsidered state,
+not the placement algorithm itself.
+Neither exposes future arrivals or the evaluated request's realized
+generation length, and all requests continue through the same planner and
+reversible dispatch path.
+Appendix~\ref{sec:appendix:completion-pressure} gives the exact pressure
+predicate, entry and exit conditions, cohort expansion, and profile
+fallbacks.
+
+\paragraph{Shallow reversible dispatch frontier.}
+Placement revisability is useful only while work remains under Router
+ownership.
+RAVEL therefore limits how much work may cross from Router-owned state into
+engine-facing state at once.
+The dispatch frontier exposes only enough Prefill work to cover one calibrated
+engine quantum and a bounded control horizon, subject to current engine
+headroom.
+Excess work remains in Router-owned queues, where it continues to contribute
+to prospective accounting and remains eligible for replanning.
+
+The frontier is a capacity-gated dispatch boundary rather than a second
+admission or predicted-miss withholding policy.
+A dispatch-eligible request at the frontier proceeds whenever its tentative
+target has sufficient engine headroom.
+Thus, the frontier bounds the amount of work approaching commitment while
+allowing eligible work to progress whenever capacity is available.
+It preserves Router-level visibility and revisability without creating a
+protected cohort or a separate placement policy.
+Appendix~\ref{sec:appendix:frontier} specifies the exact frontier construction,
+headroom test, wake-up events, and concurrent-handoff bound.
+
+\paragraph{Engine-local TBT protection.}
+Replica-level feasibility is meaningful only if local execution preserves the
+service assumptions used to construct the corresponding quote.
+Prior phase-aware serving systems mitigate Prefill--Decode interference
+through chunking, disaggregation, or related execution controls
+~\cite{sarathi,distserve,splitwise,shuffleinfer}.
+RAVEL uses a narrower engine-local mechanism to preserve its predicted TBT
+conditions rather than introducing another geographic scheduling decision.
+
+When Chunked Prefill is enabled and LATENCY Decode is active, RAVEL exports
+the tightest applicable TBT requirement together with deadline metadata to the
+local serving adapter.
+The adapter combines this requirement with a conservative calibrated Prefill
+envelope to bound the next Prefill quantum.
 LATENCY requests receive deadline/TBT-aware local priority, whereas
-non-LATENCY requests retain stable FCFS behavior.
-These engine-local controls are not a second geographic placement policy;
-they preserve the execution-time SLO assumptions on which RAVEL's geo-level
-placement decisions rely.
+non-LATENCY work retains stable FCFS behavior.
 
-\paragraph{Completion-oriented traffic.}
-Under sustained completion demand, spending scarce service on requests already
-unlikely to finish on time can reduce the number that ultimately satisfy their
-deadlines.
-RAVEL therefore follows a different overload principle:
-\emph{protect service first for work that can still benefit from it}.
-
-For the same candidate cohort and current planning context, RAVEL first runs
-its ordinary SLO-aware greedy placement as a dry pass, without persisting the
-completion virtual-service charges produced by that pass.
-Let $X^0$ denote this baseline assignment.
-RAVEL records its predicted-feasible cardinality
-\begin{equation}
-    B
-    =
-    \left|
-        \left\{
-            i\in C :
-            \Phi_{i,X_i^0}=1
-        \right\}
-    \right|.
-    \label{eq:ravel-protection-budget}
-\end{equation}
-$B$ is therefore a conservative reference produced by RAVEL's implemented
-online baseline, not an approximation guarantee relative to the unknown
-global maximum-cardinality assignment.
-The completion planner attempts to preserve this cardinality while changing
-which requests and replicas receive protection.
-
-RAVEL scans candidates in planning-deadline order and admits only
-predicted-feasible assignments to the protected set.
-Among feasible choices it favors lower projected active-service load.
-If a newcomer cannot otherwise be protected, RAVEL may replace the
-largest-service protected request at a candidate replica, but only when the
-newcomer remains feasible and the replacement frees positive profiled service.
-The displaced request becomes \emph{deferred}, not rejected.
-RAVEL retries deferred requests after the first scan; any request that still
-cannot enter the protected set receives a best-effort tentative owner whose
-quote is explicitly marked predicted infeasible.
-Every candidate therefore retains a placement even when it is not protected.
-
-During completion soft admission, the same held-out semantic expected-output
-profile described above may be used for on-time-set planning; neither future
-arrivals nor the evaluated request's realized output length are inputs to the
-policy.
-Protected requests cross the handoff frontier before deferred work.
-Policy-level deferral is nevertheless bounded by
-\begin{equation}
-    t_i^{\mathrm{release}}
-    =
-    a_i+\Delta_i .
-    \label{eq:ravel-soft-release}
-\end{equation}
-For completion traffic this equals the request's original completion-SLO
-deadline.
-It is \emph{not} a latest dispatch time at which RAVEL still predicts on-time
-completion.
-Rather, if a request remains deferred until this point, RAVEL stops
-withholding it on behalf of the protected set and releases it to best-effort
-admission; the policy no longer claims that the request can meet its original
-completion SLO.
-Protected work draining earlier may release it sooner.
-Release makes the request dispatch-eligible but does not guarantee immediate
-handoff, and RAVEL never drops a request merely because it is deferred.
-
-After cohort construction, mixed placement performs
-$O(|C||\mathcal R|)$ request--replica evaluations.
-The completion path additionally searches protected work for replacements and
-retries deferred requests, giving at most quadratic work in the bounded
-cohort in the current implementation.
-Section~\ref{sec:eval:overhead} measures the resulting online cost.
-
+These controls enforce the execution assumptions underlying replica quotes;
+they do not alter geographic placement or create a second Router-level
+scheduler.
+The Router remains solely responsible for regional placement and pre-handoff
+reassignment.
+Appendix~\ref{sec:appendix:tbt-control} gives the conditional activation rule,
+chunk-bound equation, priority encoding, and scheduler wrapper.
 
 \subsection{Commitment and Engine Handoff}
 \label{sec:design:commitment}
 
+Commitment is an ownership transition rather than a timer or queue event.
+Only successful engine handoff transfers a request from Router-owned,
+revisable state to engine-owned, final state.
 Tentative placement, mobility-hold expiration, dispatch eligibility, and
-temporary router-queue removal are not commitment events.
-For a dispatch-eligible request, RAVEL removes it from the router queue and
-asks the tentative target to register the request in replica-side state.
-If registration is rejected, the request is returned to its router queue and
-remains eligible for ordinary scheduling and replanning.
-After successful registration, RAVEL creates and tracks the final
+temporary removal from a Router queue are all non-commitment events.
+
+For a dispatch-eligible request, RAVEL reads its current tentative owner,
+removes it from that owner's Router queue, and asks the target replica to
+register the request.
+Registration alone does not commit placement.
+If the target rejects registration, RAVEL restores Router ownership and
+prospective state at the tentative replica, after which the request again
+follows the ordinary dispatch and replanning rules.
+
+After registration succeeds, RAVEL creates and tracks the corresponding
 engine-facing posting task.
-Successful registration together with successful posting-task creation is
-RAVEL's normal \emph{successful handoff}; only then does the placement become
-final.
+Successful registration together with successful posting-task creation
+constitutes \emph{successful handoff}.
+Only then does the virtual placement become final.
+If posting-task creation fails before this boundary, RAVEL aborts the partial
+registration, cleans attempt-specific state, and surfaces the failure without
+reporting a committed placement.
 
-The implementation distinguishes partial and post-handoff failures.
-If posting-task creation raises after replica registration, RAVEL aborts the
-replica-side registration and cleans the associated task state rather than
-treating the partial handoff as a successful dispatch.
-Once the posting task has been successfully created and tracked, subsequent
-task or serving errors belong to that committed attempt: RAVEL performs
-terminal cleanup and updates planning state, but does not reinterpret the
-failure as another placement opportunity.
+Failures after successful handoff belong to the committed attempt.
+RAVEL performs terminal abort and cleanup and refreshes its planning state, but
+does not reinterpret a post-handoff failure as another placement opportunity.
+Attempt identifiers prevent delayed callbacks from an earlier attempt from
+modifying ownership or accounting associated with a newer attempt.
 
-Committed work remains visible to capacity planning.
-Pending and running engine state continues to affect later quotes, and the
-request's active-service charge persists until terminal completion.
-Releasing that charge requests another scheduling pass so that newly available
-capacity can affect requests that remain router-owned.
+Committed work remains visible to later planning.
+Replica pending and running state contributes to later quotes, and its tracked
+active-service charge persists until terminal completion.
+Releasing that charge may request another planning pass so that newly
+available capacity can affect requests that remain Router-owned.
 
 RAVEL therefore separates three lifecycle events:
-\emph{arrival makes demand visible; router ownership keeps placement
-revisable; successful engine handoff makes placement final.}
+\emph{arrival makes demand visible; Router ownership keeps placement
+revisable; successful engine handoff makes placement final}.
+Appendix~\ref{sec:appendix:handoff} gives the complete ownership state machine,
+failure transitions, cleanup rules, and attempt-identifier semantics.
+
 
 
 \section{Implementation}
 \label{sec:implementation}
 
 We implement RAVEL in Python as an asynchronous control layer in front of
-geo-distributed vLLM serving replicas.
-Our implementation targets vLLM~0.8.5.post1 using its frozen V0 scheduler
+geo-distributed vLLM serving replicas~\cite{vllm}.
+Our implementation targets vLLM~0.8.5.post1 and its frozen V0 scheduler
 contract.
-All scheduling operations that modify Router-queue ownership, perform
-replanning, or dispatch requests are serialized by a single
+All control-plane operations that modify Router-owned queues, perform
+replanning, or initiate dispatch are serialized by a single
 \texttt{asyncio} scheduler lock.
-New arrivals, mobility-hold timers, and explicit replanning requests therefore
-enter the same serialized control path, preventing concurrent replanning passes
-from racing to modify tentative ownership.
-Terminal callbacks may asynchronously release tracked service charges and then
-request another serialized scheduling pass.
+New arrivals, mobility-hold expirations, engine feedback, and explicit
+replanning requests therefore enter the same serialized scheduling path,
+preventing concurrent passes from racing on tentative ownership or
+prospective accounting.
+Terminal callbacks may asynchronously release tracked service charges, but
+any resulting replanning again enters this serialized path.
 
-RAVEL loads serving behavior from external schema-v2 service profiles rather
-than relying on hard-coded token rates.
-Each profile carries an engine fingerprint and is associated with a serving
-cluster in the topology; formal runs require an external profile for every
-cluster.
-At runtime, Prefill and Decode curves are linearly interpolated between
-measured concurrency points and clamped to the nearest endpoint outside the
-calibrated range.
-The engine adapter separately constructs a conservative Prefill envelope by
-taking the maximum calibrated Prefill slope and intercept across concurrency
-levels.
-For multi-stage completion requests, the Router may additionally load an
-offline semantic output profile indexed by request-visible workflow metadata,
+\paragraph{Serving profiles.}
+RAVEL derives serving estimates from externally calibrated schema-v2 profiles
+rather than hard-coded token rates.
+Each profile carries an engine fingerprint and is bound to one serving cluster;
+formal runs require a valid external profile for every cluster.
+At runtime, RAVEL linearly interpolates Prefill and Decode measurements between
+calibrated concurrency points and clamps queries outside the measured range to
+the nearest endpoint.
+The engine adapter additionally constructs a conservative Prefill envelope
+from the maximum calibrated slope and intercept across concurrency levels.
+For multi-stage completion requests, the Router may also load an offline
+semantic output profile indexed only by request-visible workflow metadata,
 such as $(\textit{stage\_id},\textit{stage\_num})$.
+Neither profile exposes future arrivals or realized output length.
 
+\paragraph{vLLM integration and local TBT control.}
 RAVEL integrates with vLLM without modifying its source tree.
 At process startup, a lightweight adapter feature-detects and wraps
 \texttt{Scheduler.\_get\_priority} and
-\texttt{Scheduler.\_schedule\_chunked\_prefill}; if either hook is unavailable,
-startup fails rather than silently disabling RAVEL's local controls.
-For LATENCY requests, RAVEL encodes a Router-derived deadline-order key
-together with the TBT requirement in a reserved priority range, while
+\texttt{Scheduler.\_schedule\_chunked\_prefill}.
+If either required hook is unavailable, startup fails rather than silently
+disabling RAVEL's local controls.
+For LATENCY requests, the adapter encodes a Router-derived deadline-order key
+together with the applicable TBT requirement in a reserved priority range;
 non-LATENCY requests in the mixed path retain ordinary FCFS priority.
-When LATENCY Decode is active, the adapter extracts the tightest active TBT
-and combines it with the conservative Prefill envelope to derive a
-block-aligned bound on the next Prefill chunk.
+When LATENCY Decode is active, the adapter combines the tightest active TBT
+requirement with the conservative Prefill envelope to derive a block-aligned
+bound on the next Prefill quantum.
 It temporarily reduces \texttt{max\_num\_batched\_tokens} for that
-Chunked-Prefill scheduling call and restores the configured value in a
-\texttt{finally} block, so the cap affects only the current scheduling
-iteration.
+Chunked-Prefill scheduling iteration and restores the configured value in a
+\texttt{finally} block.
+The bound therefore affects only the current local scheduling decision and
+does not introduce a separate Router-level placement policy.
 
-Engine handoff is implemented asynchronously.
-After the Router's admission and budget checks succeed, the target replica
-first registers the request and RAVEL creates and tracks the corresponding
-engine-facing posting task.
-Successful replica registration together with successful posting-task creation
-constitutes the handoff defined in
-Section~\ref{sec:design:commitment}.
-If the target rejects registration, the request is returned to its Router
-queue and remains subject to the normal mobility and rebind constraints.
-Errors while installing or executing an engine-facing posting task are surfaced
-to the control plane rather than being silently converted into ordinary
-router-level rebindings.
-Posting attempts carry attempt identifiers so stale callbacks cannot clean up
-state belonging to a newer attempt.
-After handoff, replica pending and running state continues to feed subsequent
-Router quotes.
-At request termination, RAVEL releases the tracked active-request service
-charge and requests another scheduling pass so that the updated service state
-can affect requests that remain Router-owned.
+\paragraph{Asynchronous handoff and failure handling.}
+Engine handoff is implemented as an explicit asynchronous ownership
+transition.
+After Router-side admission and budget checks succeed, the target replica
+first registers the request, after which RAVEL creates and tracks the
+corresponding engine-facing posting task.
+Successful replica registration together with successful posting-task
+creation constitutes the handoff defined in
+Section~\ref{sec:design:commitment}; only then does placement become final.
 
+If replica registration is rejected, the request is restored to its
+Router-owned queue together with its prospective state and remains eligible
+for the ordinary mobility and replanning rules.
+Failures while creating or executing an engine-facing posting task are
+surfaced to the control plane rather than silently converted into new
+Router-level placements.
+Posting attempts carry attempt identifiers so that delayed callbacks from an
+older attempt cannot modify ownership or accounting associated with a newer
+one.
 
-\begin{figure*}[t]
-    \centering
-    \includegraphics[width=\textwidth]{RAVEL_3DATASETS_4METRICS_ACADEMIC_RAVEL_PURPLE.pdf}
-    \caption{
-RAVEL preserves higher request-level SLO attainment as offered load increases.
-Rows correspond to LMSYS, Burst, and DeepResearch.
-The first column varies arrival speedup from $1\times$ to $16\times$; the
-remaining columns report TTFT, end-to-end latency, and TPOT distributions at
-$1\times$ load.
-RAVEL consistently achieves the highest SLO attainment across the evaluated
-workloads and loads, without requiring uniformly lower values of every
-individual latency metric.
-}
-    \label{fig:main-results}
-\end{figure*}
-
+After successful handoff, replica-reported pending and running state continues
+to inform subsequent Router quotes.
+The corresponding active-service charge remains visible until terminal
+completion.
+At request termination, RAVEL releases that charge and requests another
+serialized scheduling pass so that newly available capacity can affect
+requests that remain Router-owned.
 
 \section{Evaluation}
-\subsection{Experimental Setup}
-\label{sec:eval:setup}
+  \label{sec:evaluation}
 
-\paragraph{Testbed and replay.}
-We deploy five Qwen3-1.7B serving replicas across three clusters in a
-2/2/1 configuration.  Each replica runs on an NVIDIA GeForce RTX~4090 GPU
-with bfloat16 precision using vLLM~0.8.5.post1 (V0).
-The final experiments use physical WAN transport rather than synthetic
-latency injection; measured directed inter-cluster RTTs range from
-10.1 to 37.9\,ms.
-Table~\ref{tab:eval-setup} summarizes the common serving configuration.
-All policies use the same hardware, topology, and base vLLM configuration;
-RAVEL's TBT-aware local control is part of the system evaluated in
-Section~\ref{sec:eval:mechanism}.
+  We evaluate RAVEL along five dimensions.
+  \textbf{RQ1:} Does RAVEL improve request-level SLO attainment as offered load
+  increases?
+  \textbf{RQ2:} Do the gains persist across repeated runs?
+  \textbf{RQ3:} Which RAVEL mechanisms produce the end-to-end gains?
+  \textbf{RQ4:} Are replica-specific quotes accurate enough to support feasibility
+  decisions?
+  \textbf{RQ5:} Is online replanning fast enough for the serving control path?
 
-We replay requests \emph{open-loop}.  For an arrival-rate speedup $s$, we
-scale trace inter-arrival times by $1/s$, so control-plane overhead cannot
-backpressure the offered load.
-We evaluate $1\times$, $2\times$, $4\times$, $8\times$, $12\times$, and
-$16\times$ arrival rates, with 500 requests in every
-policy--workload--load cell.
-Before formal measurement, we warm all backends using the same execution
-path.  Before each cell, we reset the prefix cache on every replica,
-preventing cached state from carrying across policy comparisons.
+  The main matrix reports one 500-request replay per
+  policy--workload--load cell.
+  A separate five-run campaign evaluates replay-to-replay variation at
+  $16\times$ load.
+  These two result contexts are reported separately and are not averaged
+  together.
 
-\begin{table}[t]
-\centering
-\small
-\caption{Evaluation testbed and serving configuration.}
-\label{tab:eval-setup}
-\begin{tabular}{@{}ll@{}}
-\toprule
-\textbf{Dimension} & \textbf{Configuration} \\
-\midrule
-Model               & Qwen3-1.7B \\
-GPU                 & NVIDIA GeForce RTX 4090 \\
-Precision           & bfloat16 \\
-Serving engine      & vLLM 0.8.5.post1 (V0) \\
-Deployment          & 5 replicas / 3 clusters (2/2/1) \\
-Network             & Physical WAN \\
-Inter-cluster RTT   & 10.1--37.9\,ms (directed) \\
-Max. sequences      & 64 per replica \\
-Max. batched tokens & 16,384 \\
-Prefix caching      & Enabled \\
-Chunked Prefill     & Enabled \\
-Requests per cell   & 500 \\
-Arrival speedup     & $1,2,4,8,12,16\times$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{Workloads.}
-We evaluate three workload regimes that expose different forms of contention
-in geo-distributed serving.
-\emph{LMSYS} contains heterogeneous conversational requests with diverse
-prompt and response sizes.
-\emph{Burst} uses the same 500 request contents as LMSYS but replaces their
-arrival timestamps with BurstGPT timestamps.
-This controlled construction isolates short-horizon arrival contention from
-changes in the request-content distribution.
-\emph{DeepResearch} is derived from multi-stage, completion-oriented
-workflows.  We flatten branch requests by arrival time and evaluate the first
-500 branch requests using request-level completion SLOs; the selected trace
-does not define a workflow-level task SLO.
-For DeepResearch, RAVEL's semantic output profile is constructed exclusively
-from the designated training split and never uses the realized output of an
-evaluation request.
-Together, the workloads cover heterogeneous conversational traffic,
-transient burst contention, and sustained completion-oriented demand.
-
-\paragraph{SLOs.}
-We use the JITServe-style heterogeneous-SLO construction implemented by our
-evaluation runner.
-The base budgets are 0.8\,s for TTFT, 80\,ms for TBT, and 8\,s for
-end-to-end completion, with a request-specific multiplier from
-$1\times$ to $4\times$.
-For LMSYS and Burst, the released class-assignment procedure produces
-181 LATENCY, 301 THROUGHPUT, and 18 COLLECTIVE requests in each
-500-request trace (seed 42); DeepResearch branch requests are COLLECTIVE.
-A LATENCY request succeeds only if its TTFT and every measured TBT satisfy
-their respective budgets.
-THROUGHPUT and COLLECTIVE requests instead succeed when their end-to-end
-latency satisfies the corresponding completion budget.
-
-\paragraph{Baselines.}
-We compare RAVEL against five routing policies.
-\emph{Round Robin (RR)} is stateless and distributes incoming requests
-across serving replicas in round-robin order.
-\emph{Least Load (LL)} tracks the number of outstanding requests at each
-replica and routes each new request to the replica with the smallest
-outstanding-request count.
-\emph{Random (RD)} independently selects a serving replica at random for
-each incoming request.
-\emph{DualMap} jointly considers cache affinity and serving load and
-rebalances traffic when affinity-driven placements become hotspots.
-\emph{SkyWalker} performs locality-aware cross-region load balancing,
-preferring available local capacity and redirecting requests when local
-replicas become saturated while preserving prefix locality.
-All policies replay identical request records over the same serving topology
-and base engine configuration; each baseline uses only the state prescribed
-by its routing policy.
-
-\paragraph{Metrics.}
-Our primary metric is \emph{request-level SLO attainment}, i.e., the
-fraction of requests satisfying the class-specific success criteria above.
-We additionally report time to first token (TTFT), time per output token
-(TPOT), and end-to-end request latency to separate application-level SLO
-outcomes from individual latency components.
-For LATENCY requests, we additionally report TBT violations when analyzing
-streaming performance.
-All evaluated cells complete all 500 requests, and SLO misses remain in the
-denominator.
+  \begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]
+    {RAVEL_3DATASETS_4METRICS_ACADEMIC_RAVEL_PURPLE.pdf}
+    \caption{
+    End-to-end results for LMSYS (top), Burst (middle), and DeepResearch
+    (bottom), using one 500-request replay per policy--workload--load cell.
+    The first column reports request-level SLO attainment as offered load
+    increases from $1\times$ to $16\times$; the remaining columns report
+    per-request TTFT, E2E, and TPOT distributions at $1\times$.
+    In each box plot, the red line marks the median, the box spans the
+    25th--75th percentiles, the whiskers show the 10th--90th percentiles,
+    and the inverted triangle marks the mean.
+    RAVEL maintains the highest SLO attainment as contention grows and
+    outperforms the best baseline on all three workloads.
+    }
+    \label{fig:main-results}
+  \end{figure*}
 
 
+  \subsection{Experimental Setup}
+  \label{sec:eval:setup}
 
+  \paragraph{Testbed.}
+  All policies run on the same five-replica physical-WAN testbed.
+  The replicas are distributed across three geographic clusters in a $2/2/1$
+  configuration.
+  Each replica serves Qwen3-1.7B on one NVIDIA RTX~4090 using
+  vLLM~0.8.5.post1's V0 scheduler and bfloat16 weights.
+  The directed physical WAN paths have measured RTTs ranging from
+  10.1 to 37.9\,ms.
+  The remaining common engine and replay settings are summarized in
+  Table~\ref{tab:eval-setup}.
 
-\subsection{End-to-End Performance}
-\label{sec:eval:e2e}
+  \begin{table}[t]
+    \centering
+    \small
+    \caption{
+    Common experimental configuration.
+    }
+    \label{tab:eval-setup}
+    \setlength{\tabcolsep}{3pt}
+    \renewcommand{\arraystretch}{1.08}
+    \begin{tabular}{@{}p{0.34\columnwidth}p{0.60\columnwidth}@{}}
+      \toprule
+      \textbf{Component} & \textbf{Configuration} \\
+      \midrule
+      Serving topology
+        & 5 replicas in 3 clusters ($2/2/1$) \\
+      Model and hardware
+        & Qwen3-1.7B; one RTX~4090 per replica \\
+      Serving engine
+        & vLLM~0.8.5.post1 V0; bfloat16 \\
+      Maximum model length
+        & 16,384 tokens \\
+      Engine capacity
+        & 64 sequences; 16,384 batched tokens \\
+      KV-cache configuration
+        & Block size 16; automatic prefix caching \\
+      Directed WAN RTT
+        & 10.1--37.9\,ms \\
+      Requests per main cell
+        & 500; seed 42 \\
+      Offered-load factors
+        & $1,2,4,8,12,16\times$ \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
 
-Figure~\ref{fig:main-results} summarizes RAVEL's end-to-end performance
-across the three workload regimes.
-The first column reports request-level SLO attainment as the offered load
-increases from $1\times$ to $16\times$.
-The remaining columns show the distributions of TTFT, end-to-end latency,
-and TPOT at nominal load.
-Together, these results characterize RAVEL's SLO attainment under increasing
-contention and its latency behavior at nominal load.
+  \paragraph{Workloads and SLOs.}
+  We use three workloads that expose different sources of placement uncertainty.
+  \emph{LMSYS} represents heterogeneous conversational traffic.
+  \emph{Burst} preserves the request contents of its source trace but replaces
+  the arrival timestamps with a bursty schedule, stressing decisions made from
+  transient queue state.
+  \emph{DeepResearch} represents multi-stage completion workflows whose output
+  demand depends on request-visible stage metadata.
 
-\textbf{RAVEL sustains higher SLO attainment under load.}
-RAVEL achieves the highest request-level SLO attainment across all three
-workloads and every evaluated arrival rate.
-The separation is particularly pronounced in several high-contention
-settings.
-At $16\times$ load, RAVEL attains 91.6\% of request SLOs on LMSYS,
-compared with 82.8\% for the best-SLO baseline, DualMap;
-79.2\% on Burst, compared with 62.0\% for SkyWalker; and
-64.2\% on DeepResearch, compared with 47.6\% for RD.
-These correspond to gains of 8.8, 17.2, and 16.6 percentage points,
-respectively.
-RAVEL therefore retains substantial advantages even when offered load
-creates severe contention for serving capacity.
+  Each request carries an SLO class and a request-specific multiplier.
+  The base budgets are 0.8\,s for TTFT, 80\,ms for TBT, and 8\,s for completion
+  latency, after which the configured multiplier is applied.
+  A LATENCY request succeeds only if it satisfies both its TTFT bound and every
+  TBT bound.
+  THROUGHPUT and COLLECTIVE requests succeed if their end-to-end completion
+  latency remains within their completion budget.
 
-The contrast between LMSYS and Burst provides a controlled view of this
-contention.
-Burst preserves the same request contents as LMSYS and changes only their
-arrival timestamps.
-RAVEL's larger advantage on Burst therefore coincides with greater
-short-horizon arrival contention rather than a change in the prompt or
-response distribution.
-The DeepResearch results further show that RAVEL's gains extend beyond mixed
-interactive traffic to sustained completion-oriented demand.
+  \paragraph{Replay protocol.}
+  We replay each workload in open loop.
+  At load factor $x$, every original inter-arrival interval is divided by $x$
+  while request order, contents, output metadata, and SLOs are preserved.
+  Before each cell, we reset replica prefix caches and start a fresh policy run.
+  All policies receive the same request-visible information and are evaluated
+  under the same model, topology, WAN paths, and replay schedule.
+  The main matrix contains one 500-request replay per cell.
+  The repeated-run campaign is conducted separately using five paired replays at
+  $16\times$ load.
 
-\textbf{RAVEL improves SLO attainment while maintaining competitive
-latency.}
-At nominal load, RAVEL's TTFT, end-to-end latency, and TPOT distributions
-remain competitive with the baselines across all three workloads.
-Its SLO gains under stress are also accompanied by favorable P95 latency.
-At $16\times$ load, RAVEL achieves both higher request-level SLO attainment
-and lower P95 TTFT and P95 end-to-end latency than the best-SLO baseline for
-each workload.
-For example, on Burst, RAVEL reduces P95 TTFT from 8.70\,s to 2.68\,s and
-P95 end-to-end latency from 28.68\,s to 18.78\,s relative to SkyWalker,
-while increasing SLO attainment from 62.0\% to 79.2\%.
-These results highlight the distinction between optimizing a single latency
-statistic and maximizing class-specific request-level SLO attainment.
+  \paragraph{Policies and metrics.}
+  We compare RAVEL with RoundRobin (RR), LeastLoad (LL), RD, DualMap, and
+  SkyWalker.
+  For the single-run headline results, the reported numerical gains use DualMap
+  as the comparison policy.
+  The repeated-run figure follows the designated best-baseline protocol used by
+  that campaign.
 
-These end-to-end results establish RAVEL's performance benefit but do not
-attribute it to individual mechanisms.
-Section~\ref{sec:eval:mechanism} next isolates pre-handoff revisability and
-RAVEL's SLO-specific execution controls.
+  Our primary metric is request-level SLO attainment.
+  Secondary metrics are time to first token (TTFT), end-to-end latency (E2E), and
+  time per output token (TPOT).
+  TTFT and E2E are measured from arrival at the Router, including time spent
+  under Router ownership as well as WAN and engine delay.
 
-\begin{figure*}[t]
+  \subsection{End-to-End Performance}
+  \label{sec:eval:e2e}
+
+  RAVEL's advantage grows with contention, when a placement selected from
+  arrival-time state is more likely to become stale before engine handoff.
+  As shown in Figure~\ref{fig:main-results}, RAVEL maintains the highest
+  request-level SLO attainment across the evaluated load sweep.
+
+  At $16\times$ load, RAVEL improves SLO attainment over DualMap by
+  8.8 percentage points on LMSYS, 11.2 percentage points on Burst, and
+  13.4 percentage points on DeepResearch.
+  The corresponding P95 TTFT reductions range from 49.1\% to 80.5\%, while
+  P95 E2E reductions range from 15.5\% to 56.8\%.
+
+  These gains are consistent with RAVEL retaining the ability to revise a
+  tentative placement while the request remains Router-owned.
+  As load increases, queueing and service estimates change more rapidly, making
+  an irrevocable decision based only on arrival-time state increasingly costly.
+  RAVEL can respond to these changes until handoff while prospective demand
+  accounting remains active from the moment of arrival.
+
+  The $1\times$ distributions in Figure~\ref{fig:main-results} show why raw
+  latency alone is not sufficient to characterize this objective.
+  The policies' latency distributions overlap for several metrics, yet RAVEL
+  can still attain more request-level SLOs.
+  It selectively uses available slack: a request with sufficient slack may
+  tolerate a small additional delay if doing so preserves a scarce
+  SLO-feasible replica for a more region-constrained request.
+  Thus, the relevant objective is not to minimize every individual latency
+  sample, but to allocate heterogeneous regional capacity so that more requests
+  satisfy their own SLOs.
+
+  \subsection{Repeated-Run Robustness}
+  \label{sec:eval:robustness}
+
+  The single-run matrix establishes behavior across workloads and offered loads,
+  but one replay per cell cannot quantify replay-to-replay variation.
+  We therefore conduct a separate five-run campaign at $16\times$ load.
+  For each workload, every run contains a complete 500-request replay, and the
+  RAVEL result is paired with the result from the campaign's designated
+  best baseline under the same run conditions.
+  Each paired run contributes one difference in request-level SLO attainment;
+  requests within a replay are not treated as independent statistical samples.
+
+  \begin{figure}[tb]
+      \centering
+      \includegraphics[width=\columnwidth]
+      {campaign_a_gain_dotwhisker_16x.pdf}
+      \caption{
+      \textbf{Repeated-run robustness at $16\times$ load.}
+      Each small circle reports the paired RAVEL--baseline difference in
+      request-level SLO attainment for one complete 500-request replay.
+      The large diamond marks the mean over five paired runs, and the horizontal
+      whisker shows the corresponding 95\% confidence interval computed from
+      the five run-level differences.
+      The plotted comparison uses the designated best baseline for the
+      corresponding workload.
+      Mean gains are 4.1, 7.5, and 17.4 percentage points for LMSYS, Burst,
+      and DeepResearch, respectively.
+      }
+      \label{fig:repeated-runs}
+  \end{figure}
+
+  The repeated runs preserve RAVEL's advantage on all three workloads.
+  The mean gains are 4.1 percentage points on LMSYS, 7.5 percentage points on
+  Burst, and 17.4 percentage points on DeepResearch.
+  For each workload, the 95\% confidence interval over the five paired
+  run-level differences lies above zero.
+  This supports the conclusion that the average improvement is reproducible
+  under replay variation, while not implying that every individual request or
+  every possible run must improve.
+
+  The five-run values are separate from the single-run matrix in
+  Figure~\ref{fig:main-results}.
+  They use a different experimental batch and statistical unit, so the
+  17.4-percentage-point DeepResearch value should not be substituted for the
+  13.4-percentage-point single-run result.
+  The individual paired values and statistical construction are reported in
+  Appendix~\ref{app:repeated-runs}.
+
+  \subsection{Mechanism Contributions}
+  \label{sec:eval:mechanism}
+
+  Both pre-handoff revisability and engine-local TBT protection contribute to
+  RAVEL's end-to-end SLO gains.
+  We isolate these mechanisms on Burst at $12\times$, where burst-driven queue
+  changes are pronounced but the system has not collapsed into universal
+  overload.
+
+  We compare full RAVEL with two variants.
+  \emph{FixedPlacement} retains RAVEL's SLO-aware initial placement,
+  prospective accounting, and engine-local TBT guard, but disables reassignment
+  after the initial choice.
+  It therefore isolates the value of keeping placement revisable.
+  \emph{NoTBTGuard} retains RAVEL's global routing, prospective accounting, and
+  replanning, but disables the engine-local Prefill control used to protect
+  active LATENCY Decode requests.
+
+  \begin{figure*}[tb]
     \centering
     \includegraphics[width=\textwidth]{fig3_mechanism_breakdown.pdf}
     \caption{
-\textbf{Mechanism breakdown on Burst at $12\times$ load.}
-\emph{FixedPlacement} retains immediate demand accounting but disables
-pre-handoff reassignment; \emph{NoTBTGuard} retains Router-side RAVEL
-placement but disables the local TBT-aware Chunked-Prefill guard.
-We report (a) request-level SLO attainment, (b) P95 TTFT,
-(c) the fraction of LATENCY requests with at least one TBT violation, and
-(d) P95 end-to-end latency.
-Both pre-handoff revisability and local TBT protection materially contribute
-to RAVEL's SLO gains.
-}
+    Mechanism ablation on the 500-request Burst workload at $12\times$ load.
+    FixedPlacement retains RAVEL's initial SLO-aware placement, prospective
+    accounting, and TBT guard but disables pre-handoff reassignment.
+    NoTBTGuard retains global RAVEL routing and replanning but disables the
+    engine-local TBT guard.
+    The panels report (a) request-level SLO attainment, (b) P95 TTFT,
+    (c) the TBT-violation rate among LATENCY requests, and (d) P95 E2E.
+    Higher is better only for SLO attainment.
+    }
     \label{fig:mechanism-breakdown}
-\end{figure*}
-\subsection{Mechanism Breakdown}
-\label{sec:eval:mechanism}
+  \end{figure*}
 
-We next isolate the mechanisms behind RAVEL's end-to-end gains using the
-Burst workload at $12\times$ load, where short-horizon contention is strong
-while the request contents remain identical to LMSYS.
-Figure~\ref{fig:mechanism-breakdown} compares full RAVEL with two ablations:
-\emph{FixedPlacement}, which preserves immediate prospective demand
-accounting but prevents a tentative replica assignment from changing before
-engine handoff, and \emph{NoTBTGuard}, which preserves the global RAVEL
-routing policy but disables the local TBT-aware Chunked-Prefill guard.
-Each variant processes the same 500-request trace.
-The TBT-violation metric is computed over the 181 LATENCY requests in that
-trace.
+  Full RAVEL attains 81.2\% request-level SLO attainment.
+  FixedPlacement attains 68.0\%, a reduction of 13.2 percentage points, while
+  NoTBTGuard attains 71.4\%, a reduction of 9.8 percentage points.
+  Thus, neither a strong initial placement nor global replanning without local
+  TBT protection is sufficient.
 
-\textbf{Pre-handoff revisability materially improves SLO attainment.}
-Freezing the initial tentative placement reduces request-level SLO attainment
-from 81.2\% to 68.0\%, a 13.2 percentage-point drop
-(Figure~\ref{fig:mechanism-breakdown}a).
-Importantly, FixedPlacement still accounts arrived demand immediately, so
-later requests observe the load created by earlier tentative assignments.
-What it removes is the ability to act on newly revealed demand by revising
-those earlier assignments.
-The resulting degradation therefore shows that demand visibility alone is
-insufficient: earlier placements must remain revisable while they are still
-under Router control.
-This effect is also visible in streaming performance, where the LATENCY TBT
-violation rate increases from 6.6\% under RAVEL to 37.6\% under
-FixedPlacement (Figure~\ref{fig:mechanism-breakdown}c).
+  The component-level metrics explain these losses.
+  FixedPlacement obtains a lower P95 TTFT than RAVEL
+  (2.490 versus 2.905\,s), but its LATENCY-request TBT-violation rate increases
+  from 6.6\% to 37.6\%.
+  Its P95 E2E also rises to 21.347\,s, compared with 18.985\,s for RAVEL.
+  An irrevocable geographic choice can therefore create downstream Decode
+  pressure that the remaining local mechanism cannot fully repair.
 
-The result is particularly notable because FixedPlacement does not have worse
-TTFT.
-Its P95 TTFT is 2.49\,s, compared with 2.91\,s for RAVEL
-(Figure~\ref{fig:mechanism-breakdown}b), yet it satisfies substantially fewer
-complete request SLOs.
-This reinforces the distinction between optimizing one latency component and
-preserving the joint SLO constraints that determine whether a request
-actually succeeds.
+  NoTBTGuard reduces P95 TTFT further to 1.951\,s and has nearly the same P95
+  E2E as RAVEL (18.958 versus 18.985\,s), yet its TBT-violation rate reaches
+  42.0\%.
+  Optimizing aggregate TTFT or E2E is therefore insufficient when individual
+  requests also carry inter-token deadlines.
 
-\textbf{Global placement and local TBT protection address complementary
-sources of SLO loss.}
-Disabling RAVEL's local TBT guard lowers request-level SLO attainment from
-81.2\% to 71.4\%, a 9.8 percentage-point reduction.
-The clearest change is in the LATENCY requests: their TBT violation rate rises
-from 6.6\% to 42.0\%.
-At the same time, NoTBTGuard has a lower P95 TTFT than RAVEL
-(1.95\,s versus 2.91\,s) and nearly identical P95 end-to-end latency
-(18.96\,s versus 18.99\,s).
-The degradation is therefore concentrated in the streaming constraint that
-the guard is designed to protect rather than in a broad increase in
-completion latency.
-These results show that selecting an appropriate replica globally is not
-sufficient by itself; the local serving path must also bound Prefill
-interference in accordance with activ e TBT requirements.
+  Because FixedPlacement retains prospective accounting, this experiment
+  specifically measures the contribution of placement revisability while holding
+  that accounting mechanism fixed.
+  It should not be interpreted as an independent ablation of prospective
+  accounting itself.
 
-Together with the LateBind experiment in Figure~\ref{fig:motivation}, these
-ablations separate the two parts of RAVEL's core design.
-Late binding delays commitment but also delays regional demand attribution,
-whereas FixedPlacement makes demand visible immediately but removes
-pre-handoff revisability.
-RAVEL combines both properties: arrived demand influences subsequent
-placement decisions immediately, while tentative assignments remain
-changeable until engine handoff.
+  \subsection{Quote Accuracy}
+  \label{sec:eval:quote}
 
+  RAVEL's quotes are useful only if they preserve the feasibility decision for
+  each request, rather than merely achieving a small average prediction error.
+  In the workload-$16\times$ analysis, the empirical false-feasible and
+  false-infeasible rates are 6.2\% and 1.0\%, respectively.
 
-\begin{figure}[t]
+  For a selected final-handoff record $i$, we define normalized quote error as
+  \[
+    e_i =
+    \frac{\widehat{L}_i-L_i}{B_i},
+  \]
+  where $\widehat{L}_i$ is the predicted latency, $L_i$ is the observed latency,
+  and $B_i$ is the corresponding request-specific SLO budget.
+  For LATENCY requests, $L_i$ denotes TTFT; for completion-oriented requests,
+  $L_i$ denotes E2E.
+  Negative error is optimistic, whereas positive error is conservative.
+
+  \begin{figure}[tb]
+    \centering
+    \includegraphics[width=\columnwidth]{quote_accuracy_figure.pdf}
+    \caption{
+    \textbf{Quote accuracy in the workload-$16\times$ analysis.}
+    Panel (a) shows the empirical CDF of normalized quote error
+    $(\widehat{L}_i-L_i)/B_i$ for LATENCY (TTFT) and completion (E2E) requests.
+    The shaded band denotes errors within $\pm10\%$ of the applicable SLO
+    budget.
+    Panel (b) reports feasibility-classification error rates over the same
+    $N=2{,}500$ selected final-handoff records.
+    Among 1,672 quoted-feasible decisions, 104 are false feasible (6.2\%);
+    among 828 quoted-infeasible decisions, 8 are false infeasible (1.0\%).
+    }
+    \label{fig:quote-accuracy}
+  \end{figure}
+
+  Figure~\ref{fig:quote-accuracy} shows that most normalized errors remain near
+  zero, although completion quotes exhibit a longer optimistic tail.
+  More importantly, the quotes usually preserve the decision-relevant
+  feasibility classification.
+  Of the 1,672 records quoted as feasible, 104 later violate the corresponding
+  SLO, giving a 6.2\% empirical false-feasible rate.
+  Of the 828 records quoted as infeasible, only 8 complete feasibly, giving a
+  1.0\% empirical false-infeasible rate.
+
+  These measurements evaluate the placements RAVEL actually selected and handed
+  off; they do not observe counterfactual execution on unselected replicas.
+  The reported rates therefore characterize the empirical quality of the online
+  decision signal, rather than providing a formal guarantee that every feasible
+  quote will meet its SLO.
+
+  \subsection{Planner Overhead}
+  \label{sec:eval:overhead}
+
+  RAVEL's replanning cost is small on the actual online path, while a controlled
+  benchmark shows how planner latency scales with the bounded cohort size.
+  We denote by $K$ the candidate cohort bound for one replanning pass; the
+  normal online configuration caps it at $K=64$.
+
+  \begin{figure}[tb]
     \centering
     \includegraphics[width=\columnwidth]{fig4_planner_overhead.pdf}
     \caption{
-    \textbf{RAVEL control-plane scalability and runtime overhead.}
-    (a) Planner latency versus candidate-cohort size for the mixed-traffic
-    WorkYield and completion OnTimeSet planners; the dashed line marks the
-    mixed-path bound $K=64$.
-    (b) CDF of scheduling-pass latency in a 500-request Burst run at
-    $12\times$ load.
-    The runtime median/P95 are 1.00/2.10\,ms, while the mean/P95 candidate
-    cohort sizes are 3.65/7 requests.
+    \textbf{Planner overhead on the five-replica testbed.}
+    Panel (a) reports median planner latency as the candidate cohort bound
+    $K$ increases on a $\log_2$ scale.
+    The shaded bands span P5--P95 over 50 measured repetitions per point after
+    five warm-up repetitions; the dashed line marks the configured online
+    bound $K=64$, while $K=128$ is a stress-only point.
+    Panel (b) shows the empirical CDF of scheduling-pass latency for 281 actual
+    passes from Burst at $12\times$ load.
     }
     \label{fig:planner-overhead}
-\end{figure}
+  \end{figure}
 
-\subsection{Control-Plane Scalability and Overhead}
-\label{sec:eval:overhead}
+  On the actual Burst $12\times$ execution path, a scheduling pass takes
+  0.998\,ms at the median and 2.101\,ms at P95.
+  The mean observed cohort contains 3.65 requests, its P95 is 7, and its maximum
+  is 9.
 
-We finally evaluate whether RAVEL's pre-handoff replanning can operate on the
-online serving timescale.
-Figure~\ref{fig:planner-overhead} separates two questions.
-First, we measure how planner latency scales with the size of the candidate
-cohort using states derived from the Burst and DeepResearch traces.
-For each planner and cohort size, we run five warm-up iterations followed by
-50 measured repetitions on an isolated CPU.
-Second, we instrument an end-to-end Burst run at $12\times$ load and report
-the distribution of planning latency observed during actual execution.
+  The controlled benchmark measures the cost of approaching the configured
+  bound.
+  At $K=64$, median planner latency is 10.99\,ms for mixed cohorts and
+  20.10\,ms for completion-oriented cohorts.
+  Increasing the cohort to the stress-only value $K=128$ raises these values to
+  23.47 and 42.75\,ms, respectively.
+  The shaded ranges in Figure~\ref{fig:planner-overhead} are measurement
+  dispersion across repetitions, not confidence intervals.
 
-\textbf{Bounded replanning keeps multi-request planning tractable.}
-Figure~\ref{fig:planner-overhead}a varies the candidate cohort from 1 to
-128 requests for both RAVEL planning paths.
-Planning cost increases with cohort size, with the completion planner
-consistently more expensive because it additionally considers protected-set
-replacement and deferred-request retries.
-At RAVEL's normal cohort bound of $K=64$, the median planning latency is
-10.99\,ms for the mixed planner and 20.10\,ms for the completion planner;
-their P95 latencies are 11.18\,ms and 22.61\,ms, respectively.
-Even when the replayed cohort is increased to 128 requests, median latency
-remains 23.47\,ms for mixed traffic and 42.75\,ms for completion traffic.
-These measurements show the role of the cohort bound: RAVEL does not require
-multi-request optimization over the entire Router-owned queue, but confines
-the more expensive placement computation to an explicitly bounded working
-set.
+  The gap between the controlled bound and the observed runtime cohorts explains
+  why actual passes are much faster than the worst-case benchmark.
+  These measurements characterize the evaluated five-replica deployment;
+  extrapolating the same latency to substantially larger replica sets requires a
+  separate fleet-size study.
 
-\textbf{Online planning usually operates far below the configured bound.}
-Figure~\ref{fig:planner-overhead}b reports all 281 planning passes from a
-500-request Burst run at $12\times$ load.
-The median planning latency is 1.00\,ms, with P95 and P99 latencies of
-2.10\,ms and 2.30\,ms, respectively; the maximum observed pass takes
-4.70\,ms.
-The reason actual costs are substantially below the $K=64$ replay point is
-that online cohorts are typically small: the mean cohort size is 3.65,
-the P95 is 7, and the maximum observed cohort is 9.
-Thus, the configured bound protects the control plane against unusually
-large reversible sets, while the common online path replans only a small
-number of requests at a time.
-
-Overall, these results show that preserving pre-handoff placement
-revisability does not require continuously solving a large global assignment
-problem.
-RAVEL instead performs bounded multi-request replanning when additional
-information becomes available, and the measured online planning path remains
-at millisecond-scale latency under the evaluated burst workload.
-
+  \paragraph{Evaluation takeaway.}
+  Together, the experiments show that RAVEL's gains persist across workloads and
+  repeated runs, arise from the combination of pre-handoff revisability and
+  engine-local protection, and are supported by decision-useful quotes and
+  millisecond-scale online planning.
+  The evidence characterizes the evaluated five-replica deployment and does not
+  constitute a formal SLO guarantee for arbitrary fleet sizes.
 
 
 \section{Related Work}
 \label{sec:related}
 
-\paragraph{Distributed and geo-distributed LLM routing.}
-Distributed LLM serving systems increasingly incorporate runtime load and
-cache locality into request routing.
-Preble jointly considers reusable KV state and computation load when
-scheduling prompts across distributed replicas~\cite{preble}, while DualMap
-balances cache affinity against load and performs hotspot-aware
-rebalancing~\cite{dualmap}.
-Recent systems explicitly target geographically distributed serving.
-SkyWalker handles cross-region traffic while preserving KV-cache locality and
-load balance~\cite{skylb};
-GORGO incorporates WAN latency, queueing state, and Prefill/cache cost into
-cross-region routing decisions~\cite{gorgo};
-and recent work such as Solyx combines serving telemetry with WAN
-measurements for per-request cross-site placement~\cite{solyx}.
-Although these systems may redirect or rebalance traffic after an initial
-choice, RAVEL differs in the control abstraction it exposes:
-it explicitly couples \emph{immediate prospective demand accounting} with
-\emph{pre-handoff placement revisability}.
-An arrived request is accounted at a tentative replica immediately, while
-that replica may still change until the request is handed off to the serving
-engine.
+\paragraph{LLM serving engines and phase scheduling.}
+Modern LLM serving systems improve execution efficiency through
+iteration-level batching and KV-cache management~\cite{orca,vllm},
+scalable and parallel inference~\cite{pope_scaling_inference,
+deepspeed_inference,alpaserve,loongserve}, optimized attention and
+speculative execution~\cite{flashattention2,specinfer}, and structured or
+adapter-multiplexed serving~\cite{sglang,slora}.
+A complementary line of work explicitly manages the distinct resource demands
+of Prefill and Decode.
+Sarathi-Serve uses Chunked Prefill to reduce Prefill--Decode interference
+~\cite{sarathi}, DistServe disaggregates the two phases and provisions them
+against latency objectives~\cite{distserve}, and Splitwise and ShuffleInfer
+similarly separate or coordinate phase execution to reduce interference
+~\cite{splitwise,shuffleinfer}.
+These systems primarily improve how admitted work executes.
+RAVEL operates at a different control layer: it determines geographic
+placement and preserves bounded placement revisability before engine handoff,
+while relying on the local serving engine to execute admitted requests.
 
-\paragraph{SLO-aware LLM serving and application scheduling.}
-Prior systems also adapt LLM execution to request-level latency and SLO
-requirements.
-Sarathi-Serve uses Chunked Prefill to reduce Prefill--Decode interference and
-control TTFT and inter-token latency~\cite{sarathi}, while DistServe
-disaggregates Prefill and Decode and provisions the two phases according to
-TTFT and TPOT requirements~\cite{distserve}.
-JITServe targets heterogeneous latency-, deadline-, and compound-request
-SLOs, scheduling serving capacity from imprecise request information and
-refining those estimates as generation progresses~\cite{jitserve}.
-AdaServe instead customizes speculative decoding to per-request SLO
-requirements~\cite{adaserve}.
-Other systems exploit structure across related LLM calls:
-Parrot exposes application-level semantic dependencies to coordinate
-multi-request execution~\cite{parrot}, and Agentix treats agentic programs as
-first-class scheduling entities to optimize program-level end-to-end
-latency~\cite{agentix}.
-Libra further partitions requests into cooperating micro-requests and combines
-global split-point decisions with local SLO-aware batching to balance dynamic
-serving load across instances~\cite{libra}.
-RAVEL applies the same broad principle of request-specific SLO awareness at a
-different control layer: it uses WAN delay and replica serving state to
-determine which geographic capacity remains viable for each request before
-engine handoff.
-Its local Prefill control complements this global decision by bounding
-Prefill interference in accordance with latency-sensitive execution
-constraints.
+\paragraph{Distributed and cache-aware LLM routing.}
+Distributed serving systems increasingly route requests using runtime load,
+reusable KV state, and adaptive scheduling signals.
+Preble jointly considers reusable KV state and computation load
+~\cite{preble}, while DualMap balances cache affinity against load and performs
+hotspot-aware rebalancing~\cite{dualmap}.
+Other work explores learned or adaptive request scheduling
+~\cite{llm_learning_to_rank,simple_is_better,lodestar}.
+A related body of work improves KV-cache reuse, storage, and transfer through
+cache-centric serving and prefix-aware execution
+~\cite{mooncake,cachedattention,infinigen,cachecraft,chunkattention,
+cacheblend,kvlink}.
+These techniques improve destination selection or reduce the cost of executing
+a request at a selected destination.
+RAVEL does not introduce a new cache primitive or routing score.
+Instead, it separates destination selection from commitment:
+an arrived request contributes prospective demand to its tentative replica
+immediately, while that replica may still change before successful engine
+handoff.
 
-\paragraph{Dynamic reassignment and migration.}
-Serving systems can also revise placement after an initial assignment.
-Llumnix dynamically reschedules requests across model instances and uses live
-migration to improve load balancing and isolation, mitigate resource
-fragmentation, and differentiate request priorities and SLOs~\cite{llumnix}.
-Such migration preserves placement flexibility even after execution state has
-materialized.
-RAVEL chooses an earlier control boundary: a request remains reassignable
-while it is Router-owned, but its placement becomes final after successful
-engine handoff.
-Thus, RAVEL performs reassignment before changing placement would require
-coordination with engine-managed request state, whereas migration systems
-retain flexibility after that state already exists.
-The two approaches are complementary: pre-handoff replanning can avoid some
-state movement, while runtime migration can correct imbalance that emerges
-after execution begins.
+\paragraph{Geo-distributed and network-aware placement.}
+Recent systems explicitly incorporate geographic and network heterogeneity
+into LLM placement.
+SkyWalker balances cross-region load while preserving KV-cache locality
+~\cite{skylb}; GORGO incorporates WAN latency, queueing state, and
+Prefill/cache cost into cross-region decisions~\cite{gorgo}; and Solyx uses
+serving telemetry together with WAN measurements for per-request cross-site
+placement~\cite{solyx}.
+Helix further considers heterogeneous GPU and network resources in LLM serving
+~\cite{helix}, while network-aware ML schedulers such as CASSINI coordinate
+placement with communication conditions~\cite{cassini}.
+More broadly, private-WAN systems such as SWAN and B4 demonstrate the
+importance of heterogeneous inter-datacenter paths and traffic constraints
+~\cite{swan,b4}.
+These systems sharpen the decision of \emph{where} work should execute.
+RAVEL makes an additional control decision first-class:
+\emph{when should that placement become irreversible?}
+It answers this question by retaining Router-owned tentative placement and
+prospective accounting until the engine-handoff boundary.
 
+\paragraph{SLO- and application-aware LLM scheduling.}
+Prior systems adapt LLM execution and routing to request-specific latency,
+deadline, or quality objectives.
+JITServe schedules heterogeneous request classes from imprecise request
+information~\cite{jitserve}, QUARTZ targets TTFT SLOs through
+quantile-aware routing and queueing~\cite{quartz}, Andes considers
+quality-of-experience for streamed generation~\cite{andes}, and AdaServe
+customizes speculative decoding to per-request SLO requirements
+~\cite{adaserve}.
+Libra combines request partitioning with SLO-aware scheduling under dynamic
+load~\cite{libra}, while complementary work studies serving fairness, SLO
+metrics, and serving-performance characterization
+~\cite{fairness_llm,revisit_slo_goodput,vidur}.
+Application-aware systems exploit structure across related LLM calls:
+Parrot coordinates semantic dependencies across requests~\cite{parrot},
+Agentix schedules agent programs as first-class execution entities
+~\cite{agentix}, and Ayo optimizes end-to-end LLM applications
+~\cite{ayo}.
+Agent frameworks and benchmarks further expose increasingly multi-stage and
+dependency-rich workloads~\cite{autogen,gaia,agentbench,webarena}.
+RAVEL applies request-specific SLO semantics at a different control point:
+it uses WAN delay and replica serving state to determine which geographic
+capacity remains feasible before handoff, while its engine-local controls
+preserve the execution assumptions used by those placement decisions.
 
+\paragraph{Reassignment, migration, and online commitment.}
+Serving systems can preserve flexibility after an initial assignment through
+runtime migration, state movement, preemption, or dynamic orchestration
+~\cite{llumnix,spotserve,serverlessllm,dejavu,dlora}.
+Llumnix, for example, dynamically reschedules requests across model instances
+and uses live migration to improve load balancing and isolation
+~\cite{llumnix}.
+These mechanisms retain placement flexibility after engine-managed execution
+state has materialized.
+More broadly, delay scheduling shows that waiting can expose better placement
+opportunities~\cite{delayscheduling}, while deadline-aware and online
+scheduling systems study finite slack, incomplete information, and scalable
+decision making
+~\cite{liu_layland_edf,sparrow,flow_imprecise,omega,firmament}.
+RAVEL chooses an earlier commitment boundary.
+A request may be reassigned while it remains Router-owned, but its placement
+becomes final after successful engine handoff, before changing placement would
+require moving engine-managed request state.
+Pre-handoff replanning and runtime migration are therefore complementary:
+the former can avoid some state movement, while the latter can correct
+imbalance that emerges after execution begins.
 
 \section{Conclusion}
 
@@ -1417,14 +1566,975 @@ by later arrivals.
 
 
 
-{\footnotesize \bibliographystyle{acm}
-\bibliography{sample}}
+{\footnotesize
+\bibliographystyle{acm}
+\bibliography{sample}
+}
+
+\clearpage
+\appendix
+
+% --------------------------------------------------------------------------
+% Draft-only helper.
+% Delete \AppendixPlan and replace each scaffold with final prose before
+% submission.
+% --------------------------------------------------------------------------
+\newcommand{\AppendixPlan}[3]{%
+\paragraph{Question addressed.}
+#1
+
+\paragraph{Content to include.}
+#2
+
+\paragraph{Required evidence.}
+#3
+}
 
 
-\theendnotes
+% ==========================================================================
+% Appendix A
+% ==========================================================================
+\section{Detailed Design and Operational Semantics}
+\label{app:design-details}
+
+
+
+% --------------------------------------------------------------------------
+\subsection{Common Request State and Notation}
+\label{sec:appendix:state-model}
+
+RAVEL separates \emph{placement ownership} from engine execution state.
+Before successful engine handoff, a request is Router-owned: it has one
+tentative replica, contributes prospective demand to that replica, and may be
+replanned subject to the mobility rules below.  Successful engine handoff
+transfers ownership to the serving engine and makes the geographic placement
+final.  Engine-side execution may subsequently move through Prefill, Decode,
+completion, or failure states, but these events do not reopen geographic
+placement.
+
+For request $i$, we use the following notation:
+$a_i$ is its Router arrival time; $o_i$ is its client region;
+$r_i(t)$ is its tentative replica while Router-owned; $v_i$ is the current
+ownership/version counter used by versioned transfers; and $h_i$ identifies the
+current engine attempt.  Attempt identifiers isolate asynchronous completion,
+cancellation, and cleanup events across retries.
+
+The transport path distinguishes three internal states:
+\texttt{WAITING\_MOVABLE}, \texttt{COMMITTING}, and
+\texttt{PREFILL\_LOCKED}.  A dispatch claim moves a request from
+\texttt{WAITING\_MOVABLE} to the transient \texttt{COMMITTING} state; this is
+not a second placement decision.  If target registration fails, Router
+ownership is restored.  Placement becomes final only after the target accepts
+the request and the engine-facing posting task is created and tracked
+successfully.  RAVEL does not perform ordinary geographic rebinds after this
+successful handoff.
+
+Across these states, RAVEL enforces five invariants.
+
+\begin{enumerate}
+    \item \textbf{Single ownership.} Every nonterminal request has exactly one
+          control-plane or engine owner.
+    \item \textbf{Single tentative placement.} Every Router-owned request is
+          attributed to exactly one tentative replica at a time.
+    \item \textbf{Exactly-once accounting.} A transferable prospective charge
+          is removed from its old owner before being installed at its new
+          owner; a request identifier is logically deduplicated when Router,
+          pending, and running sets overlap.
+    \item \textbf{Attempt isolation.} A callback from attempt $h$ cannot clean
+          state belonging to a newer attempt $h'>h$.
+    \item \textbf{No post-commit rebind.} Ordinary RAVEL replanning applies
+          only before successful handoff; post-handoff imbalance is left to
+          the engine or to a separate migration mechanism.
+\end{enumerate}
+
+
+% --------------------------------------------------------------------------
+\subsection{Replica SLO Quote Construction}
+\label{sec:appendix:quotes}
+
+A placement decision consumes a causal quote
+\begin{equation}
+    Q_{i,r}(t)
+    =
+    \left(
+        \Phi_{i,r}(t),
+        \widehat{T}^{\mathrm{obj}}_{i,r}(t),
+        \mathbf{z}_{i,r}(t)
+    \right),
+    \label{eq:appendix:quote-tuple}
+\end{equation}
+where $\Phi_{i,r}$ is predicted SLO feasibility,
+$\widehat{T}^{\mathrm{obj}}_{i,r}$ is the class-specific ordering objective,
+and $\mathbf{z}_{i,r}$ contains secondary capacity-pressure and stability
+signals.  Quotes are predictions constructed only from information available
+at decision time; they are not formal SLO guarantees.  Their inputs come
+from request-visible SLO metadata, directed WAN measurements, calibrated
+per-cluster service profiles, currently observed engine state, Router-owned
+queue state, and tentative assignments already selected in the same planning
+pass.  Shadow prefix locality is used only as a late tie-breaker, and the
+evaluated request's realized output length is never used by its quote.
+
+\paragraph{Calibrated service curves.}
+For cluster $c$ and active Decode concurrency $n$, the schema-v2 service
+profile stores an affine Prefill model
+\begin{equation}
+    P_{c,n}(p)=b_{c,n}+a_{c,n}p
+    \label{eq:appendix:prefill-profile}
+\end{equation}
+and a measured post-first-token Decode time per token $d_c(n)$.
+Profiles are calibrated independently for each serving class and contain an
+engine fingerprint.  At runtime RAVEL linearly interpolates between measured
+concurrency points and clamps values outside the calibrated concurrency range
+to the nearest endpoint rather than extrapolating without bound.  Because
+$P_{c,n}$ is measured while $n$ Decode sequences are active, RAVEL does not
+add a separate ad-hoc Decode-interference tax to the Prefill estimate.
+
+\paragraph{Queue-ahead Prefill expansion.}
+Let $p_i$ be the full prompt-token charge of request $i$.  Without
+engine-certified cached-token residency, the Router's shadow prefix estimate
+is used only as a locality tie-breaker and does not reduce $p_i$.
+For candidate replica $r$, let
+$E_r$ denote observed engine-pending Prefill tokens,
+$B_{i,r}$ the prompt tokens in Router-owned requests ordered no later than $i$,
+$N^{\mathrm{eng}}_r$ the number of engine-pending requests, and
+$N^{\mathrm{q}}_{i,r}$ the corresponding number of Router-owned
+queue-ahead requests.  With $n_r$ currently running Decode sequences,
+RAVEL estimates
+\begin{equation}
+    \widehat{S}^{\mathrm{pre}}_{i,r}
+    =
+    a_{c(r),n_r}
+    \left(E_r+B_{i,r}+p_i\right)
+    +
+    b_{c(r),n_r}
+    \left(N^{\mathrm{eng}}_r+N^{\mathrm{q}}_{i,r}+1\right).
+    \label{eq:appendix:prefill-service}
+\end{equation}
+During cohort replanning, $B_{i,r}$ and $N^{\mathrm{q}}_{i,r}$ additionally
+include tentative assignments chosen earlier in the same planning pass.
+Thus a later candidate observes the prospective work induced by earlier
+choices rather than a stale snapshot.
+
+The point TTFT estimate is
+\begin{equation}
+    \widehat{\mathrm{TTFT}}^{\mathrm{point}}_{i,r}(t)
+    =
+    (t-a_i)
+    +
+    \rho_{o_i,c(r)}
+    +
+    \widehat{S}^{\mathrm{pre}}_{i,r},
+    \label{eq:appendix:ttft-point}
+\end{equation}
+where $\rho_{o_i,c(r)}$ is the directed client-to-cluster WAN delay.
+The elapsed term explicitly charges Router observation time against the
+request's remaining SLO budget.
+
+\paragraph{Prospective Decode occupancy.}
+Let $\mathcal{O}_r$ be the union of request identifiers visible in the
+Router-owned queue, engine-pending set, and engine-running set for replica
+$r$.  RAVEL forms a prospective sequence count
+\begin{equation}
+    m_{i,r}
+    =
+    \max\!\left(
+        1,\;
+        \left|\mathcal{O}_r\cup\{i\}\right|,\;
+        N^{\mathrm{q}}_r+N^{\mathrm{eng}}_r+N^{\mathrm{run}}_r
+        +\mathbf{1}[i\notin\mathcal{O}_r]
+    \right),
+    \label{eq:appendix:prospective-seqs}
+\end{equation}
+and queries the calibrated Decode curve at $m_{i,r}$, with profile-level
+clamping at the measured endpoint.  The set term prevents the same request
+from being charged twice when lifecycle views overlap.
+
+\paragraph{LATENCY feasibility.}
+For a LATENCY request with TTFT and TBT limits
+$D_i^{\mathrm{TTFT}}$ and $D_i^{\mathrm{TBT}}$,
+\begin{equation}
+    \Phi^{\mathrm{lat}}_{i,r}(t)
+    =
+    \mathbf{1}\!\left[
+       \widehat{\mathrm{TTFT}}_{i,r}(t)
+       \le D_i^{\mathrm{TTFT}}
+       \;\land\;
+       d_{c(r)}(m_{i,r})
+       \le D_i^{\mathrm{TBT}}
+    \right].
+    \label{eq:appendix:latency-feasible}
+\end{equation}
+The two constraints are not combined into a weighted score: a low TTFT cannot
+compensate for a predicted TBT violation.
+
+\paragraph{Completion feasibility and output-demand fallback.}
+For completion-oriented requests, RAVEL distinguishes request-visible expected
+output demand $L_i^{\mathrm{exp}}$ from conservative risk demand
+$L_i^{\mathrm{risk}}$:
+\begin{align}
+    \widehat{T}^{\mathrm{point}}_{i,r}
+    &=
+    \widehat{\mathrm{TTFT}}^{\mathrm{point}}_{i,r}
+    +
+    \max(0,L_i^{\mathrm{exp}}-1)d_{c(r)}(m_{i,r}),
+    \label{eq:appendix:completion-point}\\
+    \widehat{T}^{\mathrm{risk}}_{i,r}
+    &=
+    \widehat{\mathrm{TTFT}}^{\mathrm{point}}_{i,r}
+    +
+    \max(0,L_i^{\mathrm{risk}}-1)d_{c(r)}(m_{i,r}).
+    \label{eq:appendix:completion-risk}
+\end{align}
+Ordinary completion feasibility uses
+\begin{equation}
+    \Phi^{\mathrm{comp}}_{i,r}(t)
+    =
+    \mathbf{1}\!\left[
+        \widehat{T}^{\mathrm{risk}}_{i,r}(t)
+        \le D_i^{\mathrm{comp}}
+    \right],
+    \label{eq:appendix:completion-feasible}
+\end{equation}
+while the expected estimate is used to represent shared service pressure.
+For multi-stage COLLECTIVE requests, we use a held-out semantic profile
+indexed by $(\textit{stage\_id},\textit{stage\_num})$.  Missing contexts fall
+back first to a stage-level aggregate and then to the declared routing hint.
+The profile is constructed from training data only; the evaluated request's
+realized generation length is never an input to its placement quote.
+
+\paragraph{Residual diagnostics.}
+RAVEL records type-specific objective residuals in a bounded history.
+For $n$ available residuals and risk level $\epsilon$, the empirical
+finite-sample rank is
+\begin{equation}
+    k
+    =
+    \left\lceil (n+1)(1-\epsilon) \right\rceil .
+    \label{eq:appendix:residual-rank}
+\end{equation}
+If $k>n$, the quote is marked uncalibrated.  In our evaluation, residuals
+are recorded for diagnostics but do not alter placement decisions.  The
+reported results therefore do not rely on a cold-start residual guarantee.
+
+The quote procedure is:
+
+\begin{quote}
+\textsc{QuoteReplica}$(i,r,t)$:
+(1) read calibrated service curves and currently observed engine state;
+(2) charge full prompt work and EDF-ordered Router work ahead of $i$;
+(3) add tentative work already selected earlier in the current pass;
+(4) compute Eq.~\ref{eq:appendix:ttft-point};
+(5) form the request-ID-deduplicated prospective Decode count in
+Eq.~\ref{eq:appendix:prospective-seqs};
+(6) evaluate the LATENCY or completion feasibility predicate;
+and (7) return feasibility, the class-specific objective, and secondary
+pressure/locality signals.
+\end{quote}
+
+
+% --------------------------------------------------------------------------
+\subsection{Prospective Accounting Lifecycle}
+\label{sec:appendix:accounting}
+
+RAVEL uses prospective state for two related purposes: to make newly arrived
+work visible before commitment and to prevent a planning pass from repeatedly
+assigning work against an unchanged snapshot.
+
+\paragraph{Queue and service debt.}
+The queue-ahead terms in Eq.~\ref{eq:appendix:prefill-service} are derived from
+current Router-owned and engine-visible state.  In addition, the WorkYield
+planner maintains virtual admission ledgers that make repeated placement
+decisions account for already admitted work even when engine lifecycle
+feedback has not yet arrived.
+
+For a LATENCY request,
+\begin{equation}
+    u_{i,r}
+    =
+    \frac{d_{c(r)}(1)}
+         {D_i^{\mathrm{TBT}}},
+    \qquad
+    A_r
+    =
+    \sum_{j:\,\mathrm{latency\ owner}(j)=r} u_{j,r}.
+    \label{eq:appendix:latency-ledger}
+\end{equation}
+Both numerator and denominator are seconds, so $u_{i,r}$ is dimensionless and
+represents one-token-period service demand.  This ledger is a placement
+balancing signal rather than a reconstruction of the instantaneous vLLM
+queue.
+
+For all requests for which service accounting is active, define
+\begin{equation}
+    s^{\mathrm{own}}_{i,r}
+    =
+    \widehat{S}^{\mathrm{own,pre}}_{i,r}
+    +
+    \widehat{S}^{\mathrm{own,dec}}_{i,r},
+    \qquad
+    L_r
+    =
+    \sum_{j:\,\mathrm{service\ owner}(j)=r}
+       s^{\mathrm{own}}_{j,r}.
+    \label{eq:appendix:service-ledger}
+\end{equation}
+The Prefill component contains only the request's own profiled service
+(including the profile intercept), not queue-ahead debt; the Decode component
+is the request-visible expected service used by the corresponding quote.
+Thus $L_r$ is measured in seconds of profiled service.
+
+\paragraph{Exactly-once registration and transfer.}
+Each persistent virtual charge is accompanied by an owner field on the
+request.  Registration is idempotent: if the owner field already exists, the
+same request is not added again.  During cohort replanning, RAVEL first removes
+the mobile candidates' old charges from the fixed planning base.  It then
+processes candidates in deadline order; after each tentative target is chosen,
+the request's charge is added to the pass-local target ledger immediately.
+After the cohort is complete, persistent ownership is transferred by
+subtracting the old charge once and adding the newly computed charge once.
+This realizes deferred commitment without deferred accounting.
+
+For completion-oriented accounting, RAVEL explicitly tracks requests carrying a service
+virtual owner and removes their active service charge on the matching terminal
+callback before requesting another scheduling pass.  The LATENCY token-period
+ledger is used as a cumulative placement-balancing signal and is therefore not
+interpreted as an exact count of currently running Decode requests; actual
+Decode feasibility continues to use the request-ID-deduplicated live
+prospective sequence count in Eq.~\ref{eq:appendix:prospective-seqs}.
+
+Operationally, arrival installs the request at one tentative owner; a replan
+transfers that ownership and its prospective charge exactly once; failed
+handoff restores Router ownership; successful handoff makes the placement
+final while keeping pending/running engine state visible; and terminal
+completion or failure releases the matching active service charge.
+
+The accounting transfer sequence is:
+
+\begin{quote}
+\textsc{TransferOrRefresh}$(i,r\!\rightarrow\!r')$:
+(1) verify that $i$ is still Router-owned and that its attempt/version is
+current;
+(2) remove $i$'s old virtual charges from the planning base;
+(3) recompute $Q_{i,r'}$ against fixed and pass-local state;
+(4) if $r'$ is selected, update the pass-local work/count/service ledgers
+immediately;
+(5) atomically replace the request's persistent owner/charge fields; and
+(6) update the recorded tentative quote.
+A failed version/attempt check leaves the current owner unchanged.
+\end{quote}
+
+
+% --------------------------------------------------------------------------
+\subsection{Bounded Observation and Replanning}
+\label{sec:appendix:replanning}
+
+RAVEL replans from causally observed state rather than polling for an
+unbounded future window.  Scheduling operations are serialized by a single
+asynchronous scheduler lock.  New arrivals, hold expiration, terminal
+feedback, explicit control-plane replan requests, and completion-pressure
+changes may request another pass; repeated requests for a pass can be
+coalesced before the next serialized execution.
+
+\paragraph{Slack-bounded observation.}
+The mobility hold is enabled only for selected non-LATENCY requests.
+Let $\delta_i$ be the most recently observed interarrival gap and let
+$\mathcal{D}_i$ contain positive RTTs from $i$'s client region to remote
+clusters.  The burst predicate is
+\begin{equation}
+    \mathrm{Burst}_i
+    =
+    \mathbf{1}\!\left[
+        \mathcal{D}_i \neq \emptyset
+        \land
+        \delta_i \le \max\mathcal{D}_i
+    \right].
+    \label{eq:appendix:burst-predicate}
+\end{equation}
+
+A hold is considered only if the request is predicted feasible in at least two
+clusters.  Let
+\begin{equation}
+    \mathrm{slack}_i
+    =
+    D_i-\min_r \widehat{T}^{\mathrm{obj}}_{i,r}.
+    \label{eq:appendix:arrival-slack}
+\end{equation}
+
+RAVEL uses the smallest positive remote RTT as the
+observation scale and bounds it by available slack:
+\begin{equation}
+    \Delta_i
+    =
+    \begin{cases}
+      \min\!\left(\min\mathcal{D}_i,\mathrm{slack}_i\right),
+        & \text{if $i$ is non-LATENCY, $\mathrm{Burst}_i=1$, and}\\
+        & \quad \text{$i$ has at least two feasible clusters},\\[1mm]
+      0, & \text{otherwise.}
+    \end{cases}
+    \label{eq:appendix:mobility-hold}
+\end{equation}
+LATENCY requests are not deliberately held.  They may participate in
+pre-handoff reassignment only when a remote SLO-feasible target exists.
+The hold changes dispatch eligibility, not accounting: the request is
+tentatively placed and visible throughout $[a_i,a_i+\Delta_i)$.
+
+\paragraph{Movable cohort.}
+The planner orders movable requests by
+\begin{equation}
+    \kappa_i
+    =
+    \left(
+       a_i+D_i,\;
+       a_i,\;
+       id_i
+    \right),
+    \label{eq:appendix:planning-order}
+\end{equation}
+where $D_i$ denotes the applicable TTFT limit for LATENCY requests and
+completion limit otherwise.  A request is excluded if it is no longer
+Router-owned, has crossed the handoff boundary, or has exhausted the
+one-rebind limit.  The ordinary candidate bound is derived from serving
+sequence capacity and is set to \texttt{max\_num\_seqs}.  Under completion
+pressure,
+Section~\ref{sec:appendix:completion-pressure}, the bound expands to aggregate
+sequence capacity across replicas.
+
+\paragraph{Fixed and pass-local context.}
+A planning pass freezes the noncandidate engine and Router context.  Fixed
+Router requests that precede candidate $i$ under
+Eq.~\ref{eq:appendix:planning-order} contribute their full prompt work and
+request intercept to $i$'s quote.  After a target is selected for one mobile
+candidate, its prompt work, request count, service charge, and applicable TBT
+charge are immediately added to pass-local state before the next candidate is
+evaluated.
+
+\begin{quote}
+\textsc{Replan}:
+(1) collect the bounded movable cohort and sort it by
+Eq.~\ref{eq:appendix:planning-order};
+(2) freeze current noncandidate engine/Router state;
+(3) remove candidates' old transferable charges from the fixed planning base;
+(4) for each candidate in order, quote every legal replica, choose the minimum
+lexicographic placement key, and update pass-local state immediately;
+(5) apply only still-current assignments, respecting attempt/version and
+one-rebind guards; and
+(6) dispatch newly eligible work through the ordinary frontier.
+\end{quote}
+
+Let $N$ be the movable cohort size, $R$ the number of replicas, and $F$ the
+number of fixed Router-owned requests scanned to build queue-ahead prefixes.
+The WorkYield planner has planning cost
+\begin{equation}
+    O(N\log N + F\log F + NR + F),
+    \label{eq:appendix:planner-complexity}
+\end{equation}
+plus constant-size quote interpolation.  This bound is independent of
+generated token count; RAVEL does not send one Router scheduling event per
+generated token.
+
+
+% --------------------------------------------------------------------------
+\subsection{Deterministic Placement Key}
+\label{sec:appendix:placement-key}
+
+RAVEL avoids combining unlike SLO and load quantities in a fitted weighted
+sum.  The WorkYield planner compares candidate replica $r$ for
+request $i$ using a lexicographic key whose conceptual order is
+\begin{equation}
+\small
+\begin{split}
+    K_{i,r} =
+    (&
+      \neg\Phi_{i,r},\;
+      O_{i,r},\;
+      \ell^{\mathrm{obj}}_{i,r},\;
+      \ell^{\mathrm{TTFT}}_{i,r},\\
+     &A_r+u_{i,r},\;
+      L_r+s^{\mathrm{own}}_{i,r},\;
+      \widehat{T}^{\mathrm{obj}}_{i,r}/D_i,\;
+      M_{i,r},\;
+      \mathrm{moved}_{i,r},\;
+      id_r
+    ),
+    \label{eq:appendix:placement-key}
+\end{split}
+\end{equation}
+with lower values preferred.  Terms that are inapplicable to a request class
+are set to their neutral value rather than introducing a class-specific
+placement algorithm.  The ordering is intentional: feasibility and normalized
+SLO violation dominate capacity pressure; capacity pressure dominates
+predicted objective and marginal service; movement, prefix locality, and
+stable replica identity are used only as late tie-breakers.
+
+The normalized lateness terms are
+\begin{align}
+    \ell^{\mathrm{obj}}_{i,r}
+    &=
+    \frac{
+       \max(0,\widehat{T}^{\mathrm{obj}}_{i,r}-D_i)
+    }{\max(D_i,\varepsilon)},
+    \label{eq:appendix:objective-lateness}\\
+    \ell^{\mathrm{TTFT}}_{i,r}
+    &=
+    \frac{
+       \max(0,\widehat{\mathrm{TTFT}}_{i,r}
+                 -D_i^{\mathrm{TTFT}})
+    }{\max(D_i^{\mathrm{TTFT}},\varepsilon)}.
+    \label{eq:appendix:ttft-lateness}
+\end{align}
+$O_{i,r}$ is the pending-capacity overflow cost when that guard is applicable.
+The convex marginal-service term is
+\begin{equation}
+    M_{i,r}
+    =
+    \frac{
+       (W_r+s^{\mathrm{own}}_{i,r})^2-W_r^2
+    }{D_i^2},
+    \label{eq:appendix:marginal-work}
+\end{equation}
+where $W_r$ is the profiled service already represented at $r$ in the current
+planning state.  Equation~\ref{eq:appendix:marginal-work} is the discrete
+increment of a quadratic congestion potential, not a learned weight.
+
+Initial single-request placement uses the same safety ordering.  After
+feasibility, normalized violation, and virtual-load terms tie, it may consult
+current pressure and shadow prefix locality before the stable replica ID.
+Prefix locality never precedes feasibility or normalized SLO violation.
+
+\paragraph{Two-request example.}
+Suppose request 1 is feasible in $A$ and $B$, while request 2 is feasible only
+in $A$.  When request 1 is tentatively assigned during a cohort pass, RAVEL
+immediately adds its prompt/service charge to the selected region's pass-local
+state.  Request 2 is therefore quoted against that tentative assignment.
+If placing request 1 in $A$ makes request 2 infeasible while placing request 1
+in $B$ preserves both requests' feasible assignments, the first component of
+Eq.~\ref{eq:appendix:placement-key} dominates later locality or movement
+preferences.  This is the concrete mechanism by which request-dependent
+regional substitutability affects placement without requiring a fitted
+cross-metric score.
+
+
+% --------------------------------------------------------------------------
+\subsection{Completion-Pressure Adaptation}
+\label{sec:appendix:completion-pressure}
+
+The completion-pressure path is enabled by request-visible workflow semantics,
+not by a dataset name.  A request is considered a workflow-completion request
+when it is COLLECTIVE and has more than one stage.  RAVEL tracks the count,
+first and latest arrival times, and minimum observed completion SLO among such
+arrivals.  It also records whether any nonworkflow traffic has appeared.
+
+Let $C_{\mathrm{seq}}$ be aggregate sequence capacity across replicas and let
+$D_{\min}$ be the minimum completion SLO among the observed workflow arrivals.
+After a minimum number of samples,
+\begin{equation}
+    q_{\mathrm{obs}}
+    =
+    \frac{N_{\mathrm{arr}}-1}
+         {t_{\mathrm{last}}-t_{\mathrm{first}}},
+    \qquad
+    q_{\mathrm{act}}
+    =
+    \frac{C_{\mathrm{seq}}}
+         {\max(1\,\mathrm{s},\,0.5D_{\min})}.
+    \label{eq:appendix:completion-pressure-qps}
+\end{equation}
+Arrival pressure is observed once
+$q_{\mathrm{obs}}\ge q_{\mathrm{act}}$.
+RAVEL requires
+\begin{equation}
+    N_{\mathrm{arr}}
+    \ge
+    \max\!\left(
+       4,\;
+       \min\!\left(16,\left\lfloor
+          \frac{C_{\mathrm{seq,replica}}}{4}
+       \right\rfloor\right)
+    \right)
+    \label{eq:appendix:pressure-min-samples}
+\end{equation}
+before evaluating the rate predicate, where the per-replica quantity is the
+configured per-replica pending/sequence limit.
+Effective completion pressure additionally requires that workflow-completion
+traffic has been observed, no nonworkflow request has been observed, and
+outstanding work is nonzero.  There is no separately tuned numerical
+hysteresis band: the observed-arrival-pressure bit is causal and sticky within
+the run, while the effective pressure path becomes inactive when the
+eligibility conditions no longer hold and the active flag is cleared when
+outstanding work drains to zero.
+
+Completion pressure changes only two planner inputs.
+
+\begin{enumerate}
+    \item The movable-candidate ceiling expands from the ordinary bound $K$ to
+          aggregate sequence capacity across the deployment.
+    \item If the held-out semantic output profile covers the request context,
+          completion quotes use its expected output demand rather than the
+          ordinary conservative upper estimate for the placement-time expected
+          workload.
+\end{enumerate}
+
+Completion pressure does not introduce a second Router-side admission queue
+or withhold requests predicted to miss their SLOs.  All candidates remain in
+the common WorkYield placement path and are dispatched through the CenterYield
+frontier.
+
+\paragraph{Semantic output profile.}
+The held-out schema-v2 semantic profile indexes
+$(\textit{stage\_id},\textit{stage\_num})$.  For covered context $x$ it stores
+the training mean and a finite-sample $q_{0.95}$ value.  Lookup follows
+\begin{equation}
+    x=(\textit{stage\_id},\textit{stage\_num})
+    \;\rightarrow\;
+    \textit{stage\_id aggregate}
+    \;\rightarrow\;
+    \text{declared routing hint}.
+    \label{eq:appendix:output-profile-fallback}
+\end{equation}
+Neither the current request's realized output length nor future arrivals enter
+this lookup.
+
+When an active completion request terminates, Unified removes its tracked
+service virtual charge, deletes the request's service-owner metadata, and
+requests another serialized scheduling pass.  Consequently, newly available
+completion capacity can influence requests that remain Router-owned.
+
+
+% --------------------------------------------------------------------------
+\subsection{Shallow Reversible Dispatch Frontier}
+\label{sec:appendix:frontier}
+
+The CenterYield frontier limits how much Router-visible prompt work can cross
+toward engine state at once.  Let
+\begin{equation}
+    H
+    =
+    \max_{c\neq c'}
+       \rho_{c,c'}
+    \label{eq:appendix:control-horizon}
+\end{equation}
+be the largest configured directed inter-cluster control RTT, and let
+$B_{\mathrm{iter}}$ be the engine's
+\texttt{max\_num\_batched\_tokens}.  For replica $r$, let
+$a_{c(r),0}$ be the calibrated idle/fastest Prefill seconds per token.
+RAVEL sets the prompt frontier
+\begin{equation}
+    F_r
+    =
+    B_{\mathrm{iter}}
+    +
+    \left\lceil
+       \frac{H}{a_{c(r),0}}
+    \right\rceil .
+    \label{eq:appendix:frontier-depth}
+\end{equation}
+Thus the engine can hold approximately one complete scheduling quantum plus
+the prompt work that the fastest calibrated Prefill path could consume during
+one worst-case control RTT.
+
+At dispatch time, if $E_r$ is currently observed engine-pending prompt work,
+the frontier headroom is
+\begin{equation}
+    G_r
+    =
+    \max(0,F_r-E_r).
+    \label{eq:appendix:frontier-headroom}
+\end{equation}
+The effective dispatch budget is the minimum of $G_r$ and the replica's
+ordinary engine budget.  A Router-owned request may cross the frontier only if
+its full conservative prompt charge fits this budget.  Eligible requests are
+ordered by their applicable absolute SLO deadline, then arrival time and
+request ID.
+
+In our five-replica deployment, the maximum directed RTT is
+$H=37.9$\,ms.  We use $B_{\mathrm{iter}}=16384$ tokens,
+\texttt{max\_num\_seqs}=64, and 16-token blocks.  The second term of
+Eq.~\ref{eq:appendix:frontier-depth} is deployment-specific and is recomputed
+from the calibrated service profile.
+
+The frontier does not withhold predicted misses in a protected queue.
+If an eligible request fits the capacity budget, it is dispatched.  If target
+registration rejects the request, the request is restored to Router-owned
+state and remains visible to the ordinary replan/dispatch path.  Work that
+does not yet fit stays Router-owned, continues to contribute to prospective
+planning, and remains movable until successful handoff.
+
+
+% --------------------------------------------------------------------------
+\subsection{Engine-Local TBT Protection}
+\label{sec:appendix:tbt-control}
+
+RAVEL's engine adapter protects the local execution assumptions used by
+LATENCY quotes.  The adapter is installed only when the target vLLM exposes
+the expected scheduler hooks; it fails fast if
+\texttt{Scheduler.\_get\_priority} or
+\texttt{Scheduler.\_schedule\_chunked\_prefill} is absent rather than silently
+running an unvalidated compatibility path.
+
+Let
+\begin{equation}
+    T
+    =
+    \min_{i\in\mathcal{D}^{\mathrm{lat}}_r}
+       D_i^{\mathrm{TBT}}
+    \label{eq:appendix:tightest-tbt}
+\end{equation}
+be the tightest active TBT among LATENCY Decode requests at replica $r$.
+From the bound profile, the adapter takes
+\begin{equation}
+    a^{\mathrm{guard}}_r = \max_n a_{c(r),n},
+    \qquad
+    b^{\mathrm{guard}}_r = \max_n b_{c(r),n}.
+    \label{eq:appendix:prefill-guard-envelope}
+\end{equation}
+For block size $g$ and ordinary token limit $B_{\max}$, it computes
+\begin{align}
+    q_{\mathrm{raw}}
+      &=
+      \left\lfloor
+         \frac{\max(0,T-b^{\mathrm{guard}}_r)}
+              {a^{\mathrm{guard}}_r}
+      \right\rfloor,
+      \label{eq:appendix:chunk-raw}\\
+    q_{\mathrm{blk}}
+      &=
+      \min\!\left(
+        B_{\max},
+        \max\!\left(
+          g,\;
+          g\left\lfloor\frac{q_{\mathrm{raw}}}{g}\right\rfloor
+        \right)
+      \right).
+      \label{eq:appendix:chunk-aligned}
+\end{align}
+If $n^{\mathrm{dec}}_r$ Decode sequences are active, the temporary
+block-aligned batch budget is
+\begin{equation}
+    B^{\mathrm{guard}}_r
+    =
+    g
+    \left\lceil
+       \frac{n^{\mathrm{dec}}_r+q_{\mathrm{blk}}}{g}
+    \right\rceil .
+    \label{eq:appendix:guard-batch-budget}
+\end{equation}
+The adapter sets
+\begin{equation}
+    B_{\mathrm{iter}}
+    \leftarrow
+    \min(B_{\max},B^{\mathrm{guard}}_r)
+    \label{eq:appendix:temporary-batch-cap}
+\end{equation}
+for that Chunked-Prefill scheduling call only and restores $B_{\max}$ in a
+\texttt{finally} block.
+
+If no active Decode carries a LATENCY TBT obligation, the adapter follows the
+ordinary vLLM scheduling path.  If even one minimum-size block exceeds the
+profiled TBT budget, the adapter must still provide vLLM a legal block and
+therefore cannot claim a TBT guarantee in that physical regime; the Router's
+replica-feasibility test is intended to avoid such placements, and any
+realized violation remains in the evaluation denominator.
+
+Phase-aware priority metadata carries a remaining deadline budget rather than
+a Router monotonic-clock timestamp.  The engine reconstructs a local deadline
+from its own arrival clock, avoiding an implicit cross-host monotonic-clock
+synchronization assumption.  Non-RAVEL priorities occupy a different range,
+so the adapter remains inert for ordinary vLLM work.
+
+% --------------------------------------------------------------------------
+\subsection{Commitment and Engine-Handoff State Machine}
+\label{sec:appendix:handoff}
+
+RAVEL defines commitment as a successful ownership transition, not as a timer
+expiration or queue removal.  The Router may choose a tentative target, hold a
+request, replan it, and mark it dispatch-eligible without making its placement
+final.
+
+The engine-facing handoff path is:
+(1) freeze the latest Router quote for observability;
+(2) ask the target replica to register the request;
+(3) create the asynchronous engine-facing HTTP posting task; and
+(4) install that task in the attempt-indexed task table.
+The quote-freeze callback is diagnostic and occurs before registration; it
+does not itself commit placement.  Successful registration together with
+successful task creation/tracking is the paper-level commitment boundary.
+Before that point, a dispatch claim may either succeed or roll back: target
+registration rejection restores the Router-owned request, and setup failure
+cleans the matching partial attempt.  After successful handoff, completion,
+failure, and cancellation perform attempt-specific cleanup but do not reopen
+geographic placement.  Callbacks whose attempt identifier no longer matches
+the active attempt are ignored.
+
+Task cleanup is attempt-aware: a deletion request carrying attempt $h$ is
+ignored when the stored task belongs to a different attempt.  The same
+attempt identifier is passed through completion/failure callbacks, preventing
+a delayed callback from an earlier posting attempt from releasing state
+belonging to a newer one.
+
+Before successful handoff, RAVEL changes only Router/transport metadata and
+prospective accounting; the serving engine has not yet established the
+engine-managed execution state whose migration would be required after
+execution starts.  RAVEL therefore obtains pre-handoff placement flexibility
+without KV-state migration.  Once handoff succeeds, later pending/running
+engine state remains visible to subsequent quotes, but the committed request
+itself is no longer an ordinary geographic-replanning candidate.
+
+\begin{quote}
+A request remains reassignable while it is Router-owned.
+Its placement becomes final only after the target replica has accepted
+registration and the corresponding engine-facing posting task has been
+created and tracked successfully.
+\end{quote}
+
+
+% ==========================================================================
+% Appendix B
+% ==========================================================================
+\section{Repeated-Run Robustness}
+\label{app:repeated-runs}
+
+This appendix reports a five-run paired robustness study at
+$16\times$ load.  The repeated-run statistics are reported separately from
+single-run headline results because they summarize different experimental
+repetitions.
+
+
+% --------------------------------------------------------------------------
+\subsection{Result Context and Comparator Definitions}
+\label{sec:appendix:result-contexts}
+
+For DeepResearch at $16\times$ load, the single-run comparison in the main
+evaluation reports 79.0\% request-level SLO attainment for \textsc{RAVEL} and
+65.6\% for DualMap, a gain of 13.4 percentage points.  The repeated-run study
+uses DualMap as the fixed comparator for all three workloads and all five
+repetitions.
+
+The five-run DeepResearch study yields a mean paired gain of 17.40 percentage
+points over DualMap.  This value is reported separately from the 13.4
+percentage-point single-run result because the two statistics summarize
+different experimental repetitions.
+
+
+% --------------------------------------------------------------------------
+\subsection{Five-Run Experimental Protocol}
+\label{sec:appendix:repeated-run-protocol}
+
+For each workload
+$w\in\{\mathrm{LMSYS},\mathrm{Burst},\mathrm{DeepResearch}\}$ at
+$16\times$ load, the robustness experiment consists of five complete paired
+replays.  Within paired repetition $j$, RAVEL and the workload's fixed
+comparator use the same request set and order, trace timing, random seed,
+serving endpoints, physical-WAN topology, model/engine configuration, cache
+reset procedure, and warm-up protocol.
+
+For workload $w$ and paired run $j$, define the SLO-attainment gain
+\begin{equation}
+    \Delta_{w,j}
+    =
+    \mathrm{SLOAttain}_{\textsc{RAVEL},w,j}
+    -
+    \mathrm{SLOAttain}_{\mathrm{DualMap},w,j}.
+    \label{eq:appendix:paired-gain}
+\end{equation}
+The five-run paired mean is
+\begin{equation}
+    \overline{\Delta}_w
+    =
+    \frac{1}{5}
+    \sum_{j=1}^{5}
+    \Delta_{w,j}.
+    \label{eq:appendix:mean-paired-gain}
+\end{equation}
+Let
+\begin{equation}
+    s_{\Delta,w}
+    =
+    \sqrt{
+        \frac{1}{4}
+        \sum_{j=1}^{5}
+        \left(
+            \Delta_{w,j}-\overline{\Delta}_w
+        \right)^2
+    }.
+    \label{eq:appendix:paired-std}
+\end{equation}
+We compute a two-sided 95\% Student-$t$ confidence interval over the five
+paired gains:
+\begin{equation}
+    \overline{\Delta}_w
+    \;\pm\;
+    t_{0.975,4}
+    \frac{s_{\Delta,w}}{\sqrt{5}},
+    \qquad
+    t_{0.975,4}=2.776.
+    \label{eq:appendix:paired-ci}
+\end{equation}
+The pairing is performed at the replay level; we do not construct independent
+confidence intervals for RAVEL and the comparator and subtract them.  The five
+paired gains (in percentage points) are
+LMSYS: $\{3.2,2.4,8.0,0.8,6.0\}$,
+Burst: $\{2.4,7.2,9.2,9.4,9.2\}$, and
+DeepResearch: $\{19.4,18.6,11.8,25.0,12.2\}$.
+
+\begin{table}[t]
+    \centering
+    \small
+    \caption{Mean paired SLO-attainment gains at $16\times$ load across five
+    repetitions.  Intervals are two-sided 95\% Student-$t$ CIs over paired
+    gains.}
+    \label{tab:appendix:five-run-deltas}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Workload} &
+        \textbf{Mean (pp)} &
+        \textbf{95\% CI (pp)} \\
+        \midrule
+        LMSYS        & 4.08  & [0.49, 7.67]   \\
+        Burst        & 7.48  & [3.78, 11.18]  \\
+        DeepResearch & 17.40 & [10.56, 24.24] \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% --------------------------------------------------------------------------
+\subsection{Repeated-Run Figure and Interpretation}
+\label{sec:appendix:repeated-run-figure}
+
+The repeated-run figure plots one point per workload at
+$\overline{\Delta}_w$ with the 95\% Student-$t$ interval from
+Eq.~\ref{eq:appendix:paired-ci} and a vertical reference line at zero.
+Each point summarizes five complete paired replays against DualMap.
+
+A positive point estimate establishes that the mean paired difference is
+positive for those five repetitions.  All three 95\% intervals in
+Table~\ref{tab:appendix:five-run-deltas} lie above zero: LMSYS improves by
+4.08\,pp on average (95\% CI: 0.49--7.67\,pp), Burst by 7.48\,pp
+(3.78--11.18\,pp), and DeepResearch by 17.40\,pp
+(10.56--24.24\,pp).  These intervals quantify replay-level variation across
+the five paired repetitions; they are not formal per-request SLO guarantees.
+
+
+
+% --------------------------------------------------------------------------
+\subsection{Interpretation Boundaries}
+\label{sec:appendix:result-boundaries}
+
+The result discussion observes the following boundaries:
+
+\begin{itemize}
+    \item The 13.4\,pp value is the single-run DeepResearch $16\times$
+          RAVEL--DualMap difference.
+    \item The 17.40\,pp value is the mean RAVEL--DualMap difference
+          across five paired DeepResearch repetitions.
+    \item The two statistics summarize different experimental repetitions and
+          are therefore reported separately.
+    \item Paired confidence intervals quantify replay-level uncertainty for
+          the five-run experiment; they do not convert an empirical result
+          into a formal SLO guarantee.
+\end{itemize}
+
 
 \end{document}
-
 
 
 

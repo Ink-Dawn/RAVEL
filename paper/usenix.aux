@@ -1,0 +1,283 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{b4,swan}
+\citation{helix,cassini,skylb,gorgo,solyx}
+\citation{distserve,jitserve,quartz,andes,revisit_slo_goodput}
+\citation{preble,dualmap,skylb,gorgo,quartz,lodestar}
+\providecommand \oddpage@label [2]{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\newlabel{sec:introduction}{{1}{1}{Introduction}{section.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces  \textbf  {Information--slack tradeoff.} Fixed-delay late binding consumes SLO slack to observe more demand; RAVEL accounts demand immediately and selectively uses a request-specific, slack-bounded mobility hold for pre-handoff replanning. }}{1}{figure.1}\protected@file@percent }
+\newlabel{fig:motivation}{{1}{1}{\textbf {Information--slack tradeoff.} Fixed-delay late binding consumes SLO slack to observe more demand; RAVEL accounts demand immediately and selectively uses a request-specific, slack-bounded mobility hold for pre-handoff replanning}{figure.1}{}}
+\citation{vllm}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Problem and Design Opportunity}{2}{section.2}\protected@file@percent }
+\newlabel{sec:problem}{{2}{2}{Problem and Design Opportunity}{section.2}{}}
+\citation{distserve,jitserve,quartz,andes}
+\citation{sparrow,flow_imprecise,omega,firmament}
+\citation{delayscheduling}
+\citation{liu_layland_edf}
+\citation{tail_at_scale}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Request-Dependent Regional Feasibility}{3}{subsection.2.1}\protected@file@percent }
+\newlabel{sec:problem:feasibility}{{2.1}{3}{Request-Dependent Regional Feasibility}{subsection.2.1}{}}
+\newlabel{eq:problem:feasible-set}{{1}{3}{Request-Dependent Regional Feasibility}{equation.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces  Demand-visibility and placement-finality operating points. One-shot couples both decisions at arrival, LateBind-$\tau $ delays both, and RAVEL exposes demand immediately while deferring only commitment. }}{3}{table.1}\protected@file@percent }
+\newlabel{tab:problem:operating-points}{{1}{3}{Demand-visibility and placement-finality operating points. One-shot couples both decisions at arrival, LateBind-$\tau $ delays both, and RAVEL exposes demand immediately while deferring only commitment}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}The Information--Slack Tradeoff}{3}{subsection.2.2}\protected@file@percent }
+\newlabel{sec:problem:tradeoff}{{2.2}{3}{The Information--Slack Tradeoff}{subsection.2.2}{}}
+\citation{sarathi,distserve,splitwise,shuffleinfer}
+\@writefile{toc}{\contentsline {section}{\numberline {3}RAVEL Design}{4}{section.3}\protected@file@percent }
+\newlabel{sec:design}{{3}{4}{RAVEL Design}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Overview}{4}{subsection.3.1}\protected@file@percent }
+\newlabel{sec:design:overview}{{3.1}{4}{Overview}{subsection.3.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Replica SLO Quotes}{4}{subsection.3.2}\protected@file@percent }
+\newlabel{sec:design:feasibility}{{3.2}{4}{Replica SLO Quotes}{subsection.3.2}{}}
+\newlabel{eq:ravel-quote}{{2}{4}{Replica SLO Quotes}{equation.2}{}}
+\newlabel{eq:ravel-ttft}{{3}{4}{Replica SLO Quotes}{equation.3}{}}
+\newlabel{eq:ravel-latency-feasible}{{4}{4}{Replica SLO Quotes}{equation.4}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces  \textbf  {RAVEL request lifecycle and ownership boundary.} RAVEL combines each request's prompt and SLO with calibrated service profiles and live replica state to construct request-specific replica quotes. It then creates a virtual placement and immediately attributes the request's prospective demand to its tentative replica. While the request remains Router-owned, subsequent arrivals may trigger bounded reassignment together with an atomic transfer of its prospective accounting. Capacity-gated dispatch initiates engine handoff; only a successful handoff makes placement final. Pending, running, and completed engine state continuously feeds back into later quotes and accounting updates. }}{5}{figure.2}\protected@file@percent }
+\newlabel{fig:ravel-overview}{{2}{5}{\textbf {RAVEL request lifecycle and ownership boundary.} RAVEL combines each request's prompt and SLO with calibrated service profiles and live replica state to construct request-specific replica quotes. It then creates a virtual placement and immediately attributes the request's prospective demand to its tentative replica. While the request remains Router-owned, subsequent arrivals may trigger bounded reassignment together with an atomic transfer of its prospective accounting. Capacity-gated dispatch initiates engine handoff; only a successful handoff makes placement final. Pending, running, and completed engine state continuously feeds back into later quotes and accounting updates}{figure.2}{}}
+\newlabel{eq:ravel-completion-feasible}{{5}{5}{Replica SLO Quotes}{equation.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Immediate and Transferable Demand Accounting}{5}{subsection.3.3}\protected@file@percent }
+\newlabel{sec:design:accounting}{{3.3}{5}{Immediate and Transferable Demand Accounting}{subsection.3.3}{}}
+\newlabel{eq:ravel-account-transfer}{{6}{5}{Immediate and Transferable Demand Accounting}{equation.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Bounded Observation and Replanning}{6}{subsection.3.4}\protected@file@percent }
+\newlabel{sec:design:replanning}{{3.4}{6}{Bounded Observation and Replanning}{subsection.3.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{Slack-bounded mobility hold.}{6}{section*.2}\protected@file@percent }
+\newlabel{eq:ravel-mobility-hold}{{7}{6}{Slack-bounded mobility hold}{equation.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{Bounded cohort.}{6}{section*.3}\protected@file@percent }
+\newlabel{eq:ravel-planning-order}{{8}{6}{Bounded cohort}{equation.8}{}}
+\@writefile{loa}{\contentsline {algocf}{\numberline {1}{\ignorespaces \textsc  {RAVEL} Router Control Loop}}{6}{algocf.1}\protected@file@percent }
+\newlabel{alg:ravel-control}{{1}{6}{Bounded cohort}{algocf.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Unified SLO-Aware Placement and Reversible Dispatch}{6}{subsection.3.5}\protected@file@percent }
+\newlabel{sec:design:policy}{{3.5}{6}{Unified SLO-Aware Placement and Reversible Dispatch}{subsection.3.5}{}}
+\citation{preble,dualmap}
+\citation{sarathi,distserve,splitwise,shuffleinfer}
+\@writefile{toc}{\contentsline {paragraph}{Initial and cohort placement.}{7}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Completion-pressure adaptation.}{7}{section*.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Shallow reversible dispatch frontier.}{7}{section*.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Engine-local TBT protection.}{7}{section*.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Commitment and Engine Handoff}{7}{subsection.3.6}\protected@file@percent }
+\newlabel{sec:design:commitment}{{3.6}{7}{Commitment and Engine Handoff}{subsection.3.6}{}}
+\citation{vllm}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Implementation}{8}{section.4}\protected@file@percent }
+\newlabel{sec:implementation}{{4}{8}{Implementation}{section.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{Serving profiles.}{8}{section*.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{vLLM integration and local TBT control.}{8}{section*.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Asynchronous handoff and failure handling.}{8}{section*.10}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces  Common experimental configuration. }}{9}{table.2}\protected@file@percent }
+\newlabel{tab:eval-setup}{{2}{9}{Common experimental configuration}{table.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Evaluation}{9}{section.5}\protected@file@percent }
+\newlabel{sec:evaluation}{{5}{9}{Evaluation}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Experimental Setup}{9}{subsection.5.1}\protected@file@percent }
+\newlabel{sec:eval:setup}{{5.1}{9}{Experimental Setup}{subsection.5.1}{}}
+\@writefile{toc}{\contentsline {paragraph}{Testbed.}{9}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Workloads and SLOs.}{9}{section*.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Replay protocol.}{9}{section*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Policies and metrics.}{9}{section*.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}End-to-End Performance}{9}{subsection.5.2}\protected@file@percent }
+\newlabel{sec:eval:e2e}{{5.2}{9}{End-to-End Performance}{subsection.5.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces  End-to-end results for LMSYS (top), Burst (middle), and DeepResearch (bottom), using one 500-request replay per policy--workload--load cell. The first column reports request-level SLO attainment as offered load increases from $1\times $ to $16\times $; the remaining columns report per-request TTFT, E2E, and TPOT distributions at $1\times $. In each box plot, the red line marks the median, the box spans the 25th--75th percentiles, the whiskers show the 10th--90th percentiles, and the inverted triangle marks the mean. RAVEL maintains the highest SLO attainment as contention grows and outperforms the best baseline on all three workloads. }}{10}{figure.3}\protected@file@percent }
+\newlabel{fig:main-results}{{3}{10}{End-to-end results for LMSYS (top), Burst (middle), and DeepResearch (bottom), using one 500-request replay per policy--workload--load cell. The first column reports request-level SLO attainment as offered load increases from $1\times $ to $16\times $; the remaining columns report per-request TTFT, E2E, and TPOT distributions at $1\times $. In each box plot, the red line marks the median, the box spans the 25th--75th percentiles, the whiskers show the 10th--90th percentiles, and the inverted triangle marks the mean. RAVEL maintains the highest SLO attainment as contention grows and outperforms the best baseline on all three workloads}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Repeated-Run Robustness}{10}{subsection.5.3}\protected@file@percent }
+\newlabel{sec:eval:robustness}{{5.3}{10}{Repeated-Run Robustness}{subsection.5.3}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces  \textbf  {Repeated-run robustness at $16\times $ load.} Each small circle reports the paired RAVEL--baseline difference in request-level SLO attainment for one complete 500-request replay. The large diamond marks the mean over five paired runs, and the horizontal whisker shows the corresponding 95\% confidence interval computed from the five run-level differences. The plotted comparison uses the designated best baseline for the corresponding workload. Mean gains are 4.1, 7.5, and 17.4 percentage points for LMSYS, Burst, and DeepResearch, respectively. }}{11}{figure.4}\protected@file@percent }
+\newlabel{fig:repeated-runs}{{4}{11}{\textbf {Repeated-run robustness at $16\times $ load.} Each small circle reports the paired RAVEL--baseline difference in request-level SLO attainment for one complete 500-request replay. The large diamond marks the mean over five paired runs, and the horizontal whisker shows the corresponding 95\% confidence interval computed from the five run-level differences. The plotted comparison uses the designated best baseline for the corresponding workload. Mean gains are 4.1, 7.5, and 17.4 percentage points for LMSYS, Burst, and DeepResearch, respectively}{figure.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Mechanism Contributions}{11}{subsection.5.4}\protected@file@percent }
+\newlabel{sec:eval:mechanism}{{5.4}{11}{Mechanism Contributions}{subsection.5.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Quote Accuracy}{11}{subsection.5.5}\protected@file@percent }
+\newlabel{sec:eval:quote}{{5.5}{11}{Quote Accuracy}{subsection.5.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.6}Planner Overhead}{11}{subsection.5.6}\protected@file@percent }
+\newlabel{sec:eval:overhead}{{5.6}{11}{Planner Overhead}{subsection.5.6}{}}
+\citation{orca,vllm}
+\citation{pope_scaling_inference,deepspeed_inference,alpaserve,loongserve}
+\citation{flashattention2,specinfer}
+\citation{sglang,slora}
+\citation{sarathi}
+\citation{distserve}
+\citation{splitwise,shuffleinfer}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces  Mechanism ablation on the 500-request Burst workload at $12\times $ load. FixedPlacement retains RAVEL's initial SLO-aware placement, prospective accounting, and TBT guard but disables pre-handoff reassignment. NoTBTGuard retains global RAVEL routing and replanning but disables the engine-local TBT guard. The panels report (a) request-level SLO attainment, (b) P95 TTFT, (c) the TBT-violation rate among LATENCY requests, and (d) P95 E2E. Higher is better only for SLO attainment. }}{12}{figure.5}\protected@file@percent }
+\newlabel{fig:mechanism-breakdown}{{5}{12}{Mechanism ablation on the 500-request Burst workload at $12\times $ load. FixedPlacement retains RAVEL's initial SLO-aware placement, prospective accounting, and TBT guard but disables pre-handoff reassignment. NoTBTGuard retains global RAVEL routing and replanning but disables the engine-local TBT guard. The panels report (a) request-level SLO attainment, (b) P95 TTFT, (c) the TBT-violation rate among LATENCY requests, and (d) P95 E2E. Higher is better only for SLO attainment}{figure.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces  \textbf  {Quote accuracy in the workload-$16\times $ analysis.} Panel (a) shows the empirical CDF of normalized quote error $(\widehat  {L}_i-L_i)/B_i$ for LATENCY (TTFT) and completion (E2E) requests. The shaded band denotes errors within $\pm 10\%$ of the applicable SLO budget. Panel (b) reports feasibility-classification error rates over the same $N=2{,}500$ selected final-handoff records. Among 1,672 quoted-feasible decisions, 104 are false feasible (6.2\%); among 828 quoted-infeasible decisions, 8 are false infeasible (1.0\%). }}{12}{figure.6}\protected@file@percent }
+\newlabel{fig:quote-accuracy}{{6}{12}{\textbf {Quote accuracy in the workload-$16\times $ analysis.} Panel (a) shows the empirical CDF of normalized quote error $(\widehat {L}_i-L_i)/B_i$ for LATENCY (TTFT) and completion (E2E) requests. The shaded band denotes errors within $\pm 10\%$ of the applicable SLO budget. Panel (b) reports feasibility-classification error rates over the same $N=2{,}500$ selected final-handoff records. Among 1,672 quoted-feasible decisions, 104 are false feasible (6.2\%); among 828 quoted-infeasible decisions, 8 are false infeasible (1.0\%)}{figure.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces  \textbf  {Planner overhead on the five-replica testbed.} Panel (a) reports median planner latency as the candidate cohort bound $K$ increases on a $\log _2$ scale. The shaded bands span P5--P95 over 50 measured repetitions per point after five warm-up repetitions; the dashed line marks the configured online bound $K=64$, while $K=128$ is a stress-only point. Panel (b) shows the empirical CDF of scheduling-pass latency for 281 actual passes from Burst at $12\times $ load. }}{12}{figure.7}\protected@file@percent }
+\newlabel{fig:planner-overhead}{{7}{12}{\textbf {Planner overhead on the five-replica testbed.} Panel (a) reports median planner latency as the candidate cohort bound $K$ increases on a $\log _2$ scale. The shaded bands span P5--P95 over 50 measured repetitions per point after five warm-up repetitions; the dashed line marks the configured online bound $K=64$, while $K=128$ is a stress-only point. Panel (b) shows the empirical CDF of scheduling-pass latency for 281 actual passes from Burst at $12\times $ load}{figure.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{Evaluation takeaway.}{12}{section*.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Related Work}{12}{section.6}\protected@file@percent }
+\newlabel{sec:related}{{6}{12}{Related Work}{section.6}{}}
+\@writefile{toc}{\contentsline {paragraph}{LLM serving engines and phase scheduling.}{12}{section*.16}\protected@file@percent }
+\citation{preble}
+\citation{dualmap}
+\citation{llm_learning_to_rank,simple_is_better,lodestar}
+\citation{mooncake,cachedattention,infinigen,cachecraft,chunkattention,cacheblend,kvlink}
+\citation{skylb}
+\citation{gorgo}
+\citation{solyx}
+\citation{helix}
+\citation{cassini}
+\citation{swan,b4}
+\citation{jitserve}
+\citation{quartz}
+\citation{andes}
+\citation{adaserve}
+\citation{libra}
+\citation{fairness_llm,revisit_slo_goodput,vidur}
+\citation{parrot}
+\citation{agentix}
+\citation{ayo}
+\citation{autogen,gaia,agentbench,webarena}
+\citation{llumnix,spotserve,serverlessllm,dejavu,dlora}
+\citation{llumnix}
+\citation{delayscheduling}
+\citation{liu_layland_edf,sparrow,flow_imprecise,omega,firmament}
+\@writefile{toc}{\contentsline {paragraph}{Distributed and cache-aware LLM routing.}{13}{section*.17}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Geo-distributed and network-aware placement.}{13}{section*.18}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{SLO- and application-aware LLM scheduling.}{13}{section*.19}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Reassignment, migration, and online commitment.}{13}{section*.20}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{13}{section.7}\protected@file@percent }
+\bibstyle{acm}
+\bibdata{sample}
+\bibcite{cachecraft}{1}
+\bibcite{vidur}{2}
+\bibcite{sarathi}{3}
+\bibcite{deepspeed_inference}{4}
+\bibcite{solyx}{5}
+\bibcite{flashattention2}{6}
+\bibcite{tail_at_scale}{7}
+\bibcite{serverlessllm}{8}
+\bibcite{llm_learning_to_rank}{9}
+\bibcite{cachedattention}{10}
+\bibcite{firmament}{11}
+\bibcite{swan}{12}
+\bibcite{shuffleinfer}{13}
+\bibcite{b4}{14}
+\bibcite{vllm}{15}
+\bibcite{infinigen}{16}
+\bibcite{flow_imprecise}{17}
+\bibcite{adaserve}{18}
+\bibcite{alpaserve}{19}
+\bibcite{lodestar}{20}
+\bibcite{parrot}{21}
+\bibcite{liu_layland_edf}{22}
+\bibcite{andes}{23}
+\bibcite{agentbench}{24}
+\bibcite{quartz}{25}
+\bibcite{agentix}{26}
+\bibcite{helix}{27}
+\bibcite{gaia}{28}
+\bibcite{specinfer}{29}
+\bibcite{spotserve}{30}
+\bibcite{sparrow}{31}
+\bibcite{splitwise}{32}
+\bibcite{pope_scaling_inference}{33}
+\bibcite{mooncake}{34}
+\bibcite{cassini}{35}
+\bibcite{libra}{36}
+\bibcite{omega}{37}
+\bibcite{slora}{38}
+\bibcite{fairness_llm}{39}
+\bibcite{preble}{40}
+\bibcite{dejavu}{41}
+\bibcite{llumnix}{42}
+\bibcite{ayo}{43}
+\bibcite{gorgo}{44}
+\bibcite{revisit_slo_goodput}{45}
+\bibcite{loongserve}{46}
+\bibcite{dlora}{47}
+\bibcite{autogen}{48}
+\bibcite{skylb}{49}
+\bibcite{kvlink}{50}
+\bibcite{cacheblend}{51}
+\bibcite{chunkattention}{52}
+\bibcite{orca}{53}
+\bibcite{dualmap}{54}
+\bibcite{delayscheduling}{55}
+\bibcite{simple_is_better}{56}
+\bibcite{jitserve}{57}
+\bibcite{sglang}{58}
+\bibcite{distserve}{59}
+\bibcite{webarena}{60}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Detailed Design and Operational Semantics}{17}{appendix.A}\protected@file@percent }
+\newlabel{app:design-details}{{A}{17}{Detailed Design and Operational Semantics}{appendix.A}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.1}Common Request State and Notation}{17}{subsection.A.1}\protected@file@percent }
+\newlabel{sec:appendix:state-model}{{A.1}{17}{Common Request State and Notation}{subsection.A.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.2}Replica SLO Quote Construction}{17}{subsection.A.2}\protected@file@percent }
+\newlabel{sec:appendix:quotes}{{A.2}{17}{Replica SLO Quote Construction}{subsection.A.2}{}}
+\newlabel{eq:appendix:quote-tuple}{{9}{17}{Replica SLO Quote Construction}{equation.9}{}}
+\@writefile{toc}{\contentsline {paragraph}{Calibrated service curves.}{17}{section*.22}\protected@file@percent }
+\newlabel{eq:appendix:prefill-profile}{{10}{17}{Calibrated service curves}{equation.10}{}}
+\@writefile{toc}{\contentsline {paragraph}{Queue-ahead Prefill expansion.}{17}{section*.23}\protected@file@percent }
+\newlabel{eq:appendix:prefill-service}{{11}{17}{Queue-ahead Prefill expansion}{equation.11}{}}
+\newlabel{eq:appendix:ttft-point}{{12}{17}{Queue-ahead Prefill expansion}{equation.12}{}}
+\@writefile{toc}{\contentsline {paragraph}{Prospective Decode occupancy.}{18}{section*.24}\protected@file@percent }
+\newlabel{eq:appendix:prospective-seqs}{{13}{18}{Prospective Decode occupancy}{equation.13}{}}
+\@writefile{toc}{\contentsline {paragraph}{LATENCY feasibility.}{18}{section*.25}\protected@file@percent }
+\newlabel{eq:appendix:latency-feasible}{{14}{18}{LATENCY feasibility}{equation.14}{}}
+\@writefile{toc}{\contentsline {paragraph}{Completion feasibility and output-demand fallback.}{18}{section*.26}\protected@file@percent }
+\newlabel{eq:appendix:completion-point}{{15}{18}{Completion feasibility and output-demand fallback}{equation.15}{}}
+\newlabel{eq:appendix:completion-risk}{{16}{18}{Completion feasibility and output-demand fallback}{equation.16}{}}
+\newlabel{eq:appendix:completion-feasible}{{17}{18}{Completion feasibility and output-demand fallback}{equation.17}{}}
+\@writefile{toc}{\contentsline {paragraph}{Residual diagnostics.}{18}{section*.27}\protected@file@percent }
+\newlabel{eq:appendix:residual-rank}{{18}{18}{Residual diagnostics}{equation.18}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.3}Prospective Accounting Lifecycle}{18}{subsection.A.3}\protected@file@percent }
+\newlabel{sec:appendix:accounting}{{A.3}{18}{Prospective Accounting Lifecycle}{subsection.A.3}{}}
+\@writefile{toc}{\contentsline {paragraph}{Queue and service debt.}{18}{section*.28}\protected@file@percent }
+\newlabel{eq:appendix:latency-ledger}{{19}{18}{Queue and service debt}{equation.19}{}}
+\newlabel{eq:appendix:service-ledger}{{20}{18}{Queue and service debt}{equation.20}{}}
+\@writefile{toc}{\contentsline {paragraph}{Exactly-once registration and transfer.}{18}{section*.29}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.4}Bounded Observation and Replanning}{19}{subsection.A.4}\protected@file@percent }
+\newlabel{sec:appendix:replanning}{{A.4}{19}{Bounded Observation and Replanning}{subsection.A.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{Slack-bounded observation.}{19}{section*.30}\protected@file@percent }
+\newlabel{eq:appendix:burst-predicate}{{21}{19}{Slack-bounded observation}{equation.21}{}}
+\newlabel{eq:appendix:arrival-slack}{{22}{19}{Slack-bounded observation}{equation.22}{}}
+\newlabel{eq:appendix:mobility-hold}{{23}{19}{Slack-bounded observation}{equation.23}{}}
+\@writefile{toc}{\contentsline {paragraph}{Movable cohort.}{19}{section*.31}\protected@file@percent }
+\newlabel{eq:appendix:planning-order}{{24}{19}{Movable cohort}{equation.24}{}}
+\@writefile{toc}{\contentsline {paragraph}{Fixed and pass-local context.}{19}{section*.32}\protected@file@percent }
+\newlabel{eq:appendix:planner-complexity}{{25}{19}{Fixed and pass-local context}{equation.25}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.5}Deterministic Placement Key}{20}{subsection.A.5}\protected@file@percent }
+\newlabel{sec:appendix:placement-key}{{A.5}{20}{Deterministic Placement Key}{subsection.A.5}{}}
+\newlabel{eq:appendix:placement-key}{{26}{20}{Deterministic Placement Key}{equation.26}{}}
+\newlabel{eq:appendix:objective-lateness}{{27}{20}{Deterministic Placement Key}{equation.27}{}}
+\newlabel{eq:appendix:ttft-lateness}{{28}{20}{Deterministic Placement Key}{equation.28}{}}
+\newlabel{eq:appendix:marginal-work}{{29}{20}{Deterministic Placement Key}{equation.29}{}}
+\@writefile{toc}{\contentsline {paragraph}{Two-request example.}{20}{section*.33}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.6}Completion-Pressure Adaptation}{20}{subsection.A.6}\protected@file@percent }
+\newlabel{sec:appendix:completion-pressure}{{A.6}{20}{Completion-Pressure Adaptation}{subsection.A.6}{}}
+\newlabel{eq:appendix:completion-pressure-qps}{{30}{20}{Completion-Pressure Adaptation}{equation.30}{}}
+\newlabel{eq:appendix:pressure-min-samples}{{31}{20}{Completion-Pressure Adaptation}{equation.31}{}}
+\@writefile{toc}{\contentsline {paragraph}{Semantic output profile.}{20}{section*.34}\protected@file@percent }
+\newlabel{eq:appendix:output-profile-fallback}{{32}{20}{Semantic output profile}{equation.32}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.7}Shallow Reversible Dispatch Frontier}{21}{subsection.A.7}\protected@file@percent }
+\newlabel{sec:appendix:frontier}{{A.7}{21}{Shallow Reversible Dispatch Frontier}{subsection.A.7}{}}
+\newlabel{eq:appendix:control-horizon}{{33}{21}{Shallow Reversible Dispatch Frontier}{equation.33}{}}
+\newlabel{eq:appendix:frontier-depth}{{34}{21}{Shallow Reversible Dispatch Frontier}{equation.34}{}}
+\newlabel{eq:appendix:frontier-headroom}{{35}{21}{Shallow Reversible Dispatch Frontier}{equation.35}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.8}Engine-Local TBT Protection}{21}{subsection.A.8}\protected@file@percent }
+\newlabel{sec:appendix:tbt-control}{{A.8}{21}{Engine-Local TBT Protection}{subsection.A.8}{}}
+\newlabel{eq:appendix:tightest-tbt}{{36}{21}{Engine-Local TBT Protection}{equation.36}{}}
+\newlabel{eq:appendix:prefill-guard-envelope}{{37}{21}{Engine-Local TBT Protection}{equation.37}{}}
+\newlabel{eq:appendix:chunk-raw}{{38}{21}{Engine-Local TBT Protection}{equation.38}{}}
+\newlabel{eq:appendix:chunk-aligned}{{39}{21}{Engine-Local TBT Protection}{equation.39}{}}
+\newlabel{eq:appendix:guard-batch-budget}{{40}{21}{Engine-Local TBT Protection}{equation.40}{}}
+\newlabel{eq:appendix:temporary-batch-cap}{{41}{21}{Engine-Local TBT Protection}{equation.41}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.9}Commitment and Engine-Handoff State Machine}{21}{subsection.A.9}\protected@file@percent }
+\newlabel{sec:appendix:handoff}{{A.9}{21}{Commitment and Engine-Handoff State Machine}{subsection.A.9}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {B}Repeated-Run Robustness}{22}{appendix.B}\protected@file@percent }
+\newlabel{app:repeated-runs}{{B}{22}{Repeated-Run Robustness}{appendix.B}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.1}Result Context and Comparator Definitions}{22}{subsection.B.1}\protected@file@percent }
+\newlabel{sec:appendix:result-contexts}{{B.1}{22}{Result Context and Comparator Definitions}{subsection.B.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Mean paired SLO-attainment gains at $16\times $ load across five repetitions. Intervals are two-sided 95\% Student-$t$ CIs over paired gains.}}{22}{table.3}\protected@file@percent }
+\newlabel{tab:appendix:five-run-deltas}{{3}{22}{Mean paired SLO-attainment gains at $16\times $ load across five repetitions. Intervals are two-sided 95\% Student-$t$ CIs over paired gains}{table.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.2}Five-Run Experimental Protocol}{22}{subsection.B.2}\protected@file@percent }
+\newlabel{sec:appendix:repeated-run-protocol}{{B.2}{22}{Five-Run Experimental Protocol}{subsection.B.2}{}}
+\newlabel{eq:appendix:paired-gain}{{42}{22}{Five-Run Experimental Protocol}{equation.42}{}}
+\newlabel{eq:appendix:mean-paired-gain}{{43}{22}{Five-Run Experimental Protocol}{equation.43}{}}
+\newlabel{eq:appendix:paired-std}{{44}{22}{Five-Run Experimental Protocol}{equation.44}{}}
+\newlabel{eq:appendix:paired-ci}{{45}{22}{Five-Run Experimental Protocol}{equation.45}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.3}Repeated-Run Figure and Interpretation}{22}{subsection.B.3}\protected@file@percent }
+\newlabel{sec:appendix:repeated-run-figure}{{B.3}{22}{Repeated-Run Figure and Interpretation}{subsection.B.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.4}Interpretation Boundaries}{23}{subsection.B.4}\protected@file@percent }
+\newlabel{sec:appendix:result-boundaries}{{B.4}{23}{Interpretation Boundaries}{subsection.B.4}{}}
+\gdef \@abspage@last{23}

@@ -1,7 +1,8 @@
-% RAVEL compact reference subset
-% 66 entries selected for the main manuscript; generated from the
-% independently verified RAVEL_expanded_references.bib.
-% Keep provenance comments attached to each entry.
+% RAVEL expanded reference library
+% Generated from the existing bibliography, official publisher pages, Crossref DOI metadata, and arXiv official BibTeX.
+% Seed discovery used JITServe, DualMap, Preble, Mooncake, SkyWalker, and GORGO reference sections.
+% This file is independent: usenix.tex and sample.bib were not modified.
+% Generated at 2026-08-27T04:08:48.403274+00:00
 
 % [01] Verification: existing RAVEL sample.bib
 % Seed chain: existing bibliography; SkyWalker seed
@@ -23,10 +24,23 @@
   title         = {{GORGO}: Online Tuning for Cross-Region Network-Aware {LLM} Serving},
   year          = {2026},
   eprint        = {2602.11688},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.NI},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.NI},
   doi           = {10.48550/arXiv.2602.11688},
   note          = {arXiv:2602.11688v3}
+}
+
+% [03] Verification: existing RAVEL sample.bib
+% Seed chain: existing bibliography
+@misc{solyx,
+  author        = {Aleks Bernhard and Nithin Katla},
+  title         = {Solyx {AI} Grid: Hardware-Telemetry-Aware Routing Across Geographically Distributed {GPU} Clusters},
+  year          = {2026},
+  eprint        = {2606.15050},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.DC},
+  doi           = {10.48550/arXiv.2606.15050},
+  note          = {arXiv:2606.15050v1}
 }
 
 % [04] Verification: existing RAVEL sample.bib
@@ -107,6 +121,19 @@
   url       = {https://www.usenix.org/conference/osdi24/presentation/agrawal},
   publisher = {USENIX Association},
   month     = jul
+}
+
+% [10] Verification: existing RAVEL sample.bib
+% Seed chain: existing bibliography; JITServe ref. 39
+@inproceedings{adaserve,
+  author    = {Zikun Li and Zhuofu Chen and Remi Delacourt and Gabriele Oliaro and Zeyu Wang and Qinghan Chen and Shuhuai Lin and April Yang and Zhihao Zhang and Zhuoming Chen and Yi-Hsiang Lai and Xinhao Cheng and Xupeng Miao and Zhihao Jia},
+  title     = {{AdaServe}: Accelerating Multi-{SLO} {LLM} Serving with {SLO}-Customized Speculative Decoding},
+  booktitle = {Proceedings of the 21st European Conference on Computer Systems},
+  series    = {EuroSys '26},
+  year      = {2026},
+  pages     = {36--54},
+  publisher = {ACM},
+  doi       = {10.1145/3767295.3769315}
 }
 
 % [11] Verification: existing RAVEL sample.bib
@@ -223,16 +250,81 @@
   month     = jul
 }
 
+% [19] Verification: Crossref DOI API and DOI resolver
+% Seed chain: JITServe ref. 12
+@inproceedings{deepspeed_inference,
+  author    = {Reza Yazdani Aminabadi and Samyam Rajbhandari and Ammar Ahmad Awan and Cheng Li and Du Li and Elton Zheng and Olatunji Ruwase and Shaden Smith and Minjia Zhang and Jeff Rasley and Yuxiong He},
+  title     = {DeepSpeed- Inference: Enabling Efficient Inference of Transformer Models at Unprecedented Scale},
+  booktitle = {SC22: International Conference for High Performance Computing, Networking, Storage and Analysis},
+  year      = {2022},
+  pages     = {1--15},
+  publisher = {IEEE},
+  doi       = {10.1109/sc41404.2022.00051},
+  url       = {https://doi.org/10.1109/sc41404.2022.00051}
+}
+
+% [20] Verification: Crossref DOI API and DOI resolver
+% Seed chain: JITServe ref. 21
+@inproceedings{turbotransformers,
+  author    = {Jiarui Fang and Yang Yu and Chengduo Zhao and Jie Zhou},
+  title     = {TurboTransformers},
+  booktitle = {Proceedings of the 26th ACM SIGPLAN Symposium on Principles and Practice of Parallel Programming},
+  year      = {2021},
+  pages     = {389--402},
+  publisher = {ACM},
+  doi       = {10.1145/3437801.3441578},
+  url       = {https://doi.org/10.1145/3437801.3441578}
+}
+
+% [21] Verification: Crossref DOI API and DOI resolver
+% Seed chain: JITServe ref. 18
+@inproceedings{flashattention,
+  author    = {Tri Dao and Dan Fu and Stefano Ermon and Atri Rudra and Christopher Ré},
+  title     = {FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness},
+  booktitle = {Advances in Neural Information Processing Systems 35},
+  year      = {2022},
+  pages     = {16344--16359},
+  publisher = {Neural Information Processing Systems Foundation, Inc. (NeurIPS)},
+  doi       = {10.52202/068431-1189},
+  url       = {https://doi.org/10.52202/068431-1189}
+}
+
+% [22] Verification: arXiv official BibTeX endpoint
+% Seed chain: JITServe ref. 17
+@misc{flashattention2,
+      title={FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning}, 
+      author={Tri Dao},
+      year={2023},
+      eprint={2307.08691},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2307.08691}, 
+}
+
 % [23] Verification: arXiv official BibTeX endpoint
 % Seed chain: DualMap References
 @misc{pope_scaling_inference,
-  title         = {Efficiently Scaling Transformer Inference},
-  author        = {Reiner Pope and Sholto Douglas and Aakanksha Chowdhery and Jacob Devlin and James Bradbury and Anselm Levskaya and Jonathan Heek and Kefan Xiao and Shivani Agrawal and Jeff Dean},
-  year          = {2022},
-  eprint        = {2211.05102},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.LG},
-  url           = {https://arxiv.org/abs/2211.05102}
+      title={Efficiently Scaling Transformer Inference}, 
+      author={Reiner Pope and Sholto Douglas and Aakanksha Chowdhery and Jacob Devlin and James Bradbury and Anselm Levskaya and Jonathan Heek and Kefan Xiao and Shivani Agrawal and Jeff Dean},
+      year={2022},
+      eprint={2211.05102},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2211.05102}, 
+}
+
+% [24] Verification: official publisher/conference page
+% Seed chain: Preble and Mooncake reference chains
+@inproceedings{flexgen,
+  author    = {Ying Sheng and Lianmin Zheng and Binhang Yuan and Zhuohan Li and Max Ryabinin and Beidi Chen and Percy Liang and Christopher R{\'e} and Ion Stoica and Ce Zhang},
+  title     = {{FlexGen}: High-Throughput Generative Inference of Large Language Models with a Single {GPU}},
+  booktitle = {Proceedings of the 40th International Conference on Machine Learning},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {202},
+  pages     = {31094--31116},
+  year      = {2023},
+  publisher = {PMLR},
+  url       = {https://proceedings.mlr.press/v202/sheng23a.html}
 }
 
 % [25] Verification: official publisher/conference page
@@ -266,13 +358,28 @@
 % [27] Verification: arXiv official BibTeX endpoint
 % Seed chain: JITServe ref. 27
 @misc{shuffleinfer,
-  title         = {Inference without Interference: Disaggregate LLM Inference for Mixed Downstream Workloads},
-  author        = {Cunchen Hu and Heyang Huang and Liangliang Xu and Xusheng Chen and Jiang Xu and Shuang Chen and Hao Feng and Chenxi Wang and Sa Wang and Yungang Bao and Ninghui Sun and Yizhou Shan},
-  year          = {2024},
-  eprint        = {2401.11181},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.DC},
-  url           = {https://arxiv.org/abs/2401.11181}
+      title={Inference without Interference: Disaggregate LLM Inference for Mixed Downstream Workloads}, 
+      author={Cunchen Hu and Heyang Huang and Liangliang Xu and Xusheng Chen and Jiang Xu and Shuang Chen and Hao Feng and Chenxi Wang and Sa Wang and Yungang Bao and Ninghui Sun and Yizhou Shan},
+      year={2024},
+      eprint={2401.11181},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC},
+      url={https://arxiv.org/abs/2401.11181}, 
+}
+
+% [28] Verification: official publisher/conference page
+% Seed chain: Preble/JITServe reference chains
+@inproceedings{serverlessllm,
+  author    = {Yao Fu and Leyang Xue and Yeqi Huang and Andrei-Octavian Brabete and Dmitrii Ustiugov and Yuvraj Patel and Luo Mai},
+  title     = {{ServerlessLLM}: {Low-Latency} Serverless Inference for Large Language Models},
+  booktitle = {18th USENIX Symposium on Operating Systems Design and Implementation (OSDI 24)},
+  year      = {2024},
+  isbn      = {978-1-939133-40-3},
+  address   = {Santa Clara, CA},
+  pages     = {135--153},
+  url       = {https://www.usenix.org/conference/osdi24/presentation/fu},
+  publisher = {USENIX Association},
+  month     = jul
 }
 
 % [29] Verification: Crossref DOI API and DOI resolver
@@ -286,6 +393,19 @@
   publisher = {Neural Information Processing Systems Foundation, Inc. (NeurIPS)},
   doi       = {10.52202/079017-2000},
   url       = {https://doi.org/10.52202/079017-2000}
+}
+
+% [30] Verification: Crossref DOI API and DOI resolver
+% Seed chain: Preble/Mooncake reference chains
+@inproceedings{specinfer,
+  author    = {Xupeng Miao and Gabriele Oliaro and Zhihao Zhang and Xinhao Cheng and Zeyu Wang and Zhengxin Zhang and Rae Ying Yee Wong and Alan Zhu and Lijie Yang and Xiaoxiang Shi and Chunan Shi and Zhuoming Chen and Daiyaan Arfeen and Reyna Abhyankar and Zhihao Jia},
+  title     = {SpecInfer: Accelerating Large Language Model Serving with Tree-based Speculative Inference and Verification},
+  booktitle = {Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 3},
+  year      = {2024},
+  pages     = {932--949},
+  publisher = {ACM},
+  doi       = {10.1145/3620666.3651335},
+  url       = {https://doi.org/10.1145/3620666.3651335}
 }
 
 % [31] Verification: official publisher/conference page
@@ -321,13 +441,26 @@
 % [33] Verification: arXiv official BibTeX endpoint
 % Seed chain: DualMap References
 @misc{dejavu,
-  title         = {D\'ej\`aVu: KV-cache Streaming for Fast, Fault-tolerant Generative LLM Serving},
-  author        = {Foteini Strati and Sara Mcallister and Amar Phanishayee and Jakub Tarnawski and Ana Klimovic},
-  year          = {2024},
-  eprint        = {2403.01876},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.DC},
-  url           = {https://arxiv.org/abs/2403.01876}
+      title={D\'ej\`aVu: KV-cache Streaming for Fast, Fault-tolerant Generative LLM Serving}, 
+      author={Foteini Strati and Sara Mcallister and Amar Phanishayee and Jakub Tarnawski and Ana Klimovic},
+      year={2024},
+      eprint={2403.01876},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC},
+      url={https://arxiv.org/abs/2403.01876}, 
+}
+
+% [34] Verification: Crossref DOI API and DOI resolver
+% Seed chain: DualMap References
+@inproceedings{vattention,
+  author    = {Ramya Prabhu and Ajay Nayak and Jayashree Mohan and Ramachandran Ramjee and Ashish Panwar},
+  title     = {vAttention: Dynamic Memory Management for Serving LLMs without PagedAttention},
+  booktitle = {Proceedings of the 30th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 1},
+  year      = {2025},
+  pages     = {1133--1150},
+  publisher = {ACM},
+  doi       = {10.1145/3669940.3707256},
+  url       = {https://doi.org/10.1145/3669940.3707256}
 }
 
 % [35] Verification: Crossref DOI API and DOI resolver
@@ -343,6 +476,45 @@
   url       = {https://doi.org/10.1145/3694715.3695948}
 }
 
+% [36] Verification: Crossref DOI API and DOI resolver
+% Seed chain: Preble/Mooncake reference chains
+@inproceedings{powerinfer,
+  author    = {Yixin Song and Zeyu Mi and Haotong Xie and Haibo Chen},
+  title     = {PowerInfer: Fast Large Language Model Serving with a Consumer-grade GPU},
+  booktitle = {Proceedings of the ACM SIGOPS 30th Symposium on Operating Systems Principles},
+  year      = {2024},
+  pages     = {590--606},
+  publisher = {ACM},
+  doi       = {10.1145/3694715.3695964},
+  url       = {https://doi.org/10.1145/3694715.3695964}
+}
+
+% [37] Verification: Crossref DOI API and DOI resolver
+% Seed chain: GORGO/SkyWalker reference chains
+@inproceedings{helix,
+  author    = {Yixuan Mei and Yonghao Zhuang and Xupeng Miao and Juncheng Yang and Zhihao Jia and Rashmi Vinayak},
+  title     = {Helix: Serving Large Language Models over Heterogeneous GPUs and Network via Max-Flow},
+  booktitle = {Proceedings of the 30th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 1},
+  year      = {2025},
+  pages     = {586--602},
+  publisher = {ACM},
+  doi       = {10.1145/3669940.3707215},
+  url       = {https://doi.org/10.1145/3669940.3707215}
+}
+
+% [38] Verification: Crossref DOI API and DOI resolver
+% Seed chain: JITServe/serving reference chain
+@inproceedings{apparate,
+  author    = {Yinwei Dai and Rui Pan and Anand Iyer and Kai Li and Ravi Netravali},
+  title     = {Apparate: Rethinking Early Exits to Tame Latency-Throughput Tensions in ML Serving},
+  booktitle = {Proceedings of the ACM SIGOPS 30th Symposium on Operating Systems Principles},
+  year      = {2024},
+  pages     = {607--623},
+  publisher = {ACM},
+  doi       = {10.1145/3694715.3695963},
+  url       = {https://doi.org/10.1145/3694715.3695963}
+}
+
 % [39] Verification: Crossref DOI API and DOI resolver
 % Seed chain: JITServe ref. 45
 @inproceedings{spotserve,
@@ -354,6 +526,17 @@
   publisher = {ACM},
   doi       = {10.1145/3620665.3640411},
   url       = {https://doi.org/10.1145/3620665.3640411}
+}
+
+% [40] Verification: official publisher/conference page
+% Seed chain: JITServe and DualMap reference chains
+@inproceedings{slora,
+  author    = {Ying Sheng and Shiyi Cao and Dacheng Li and Coleman Hooper and Nicholas Lee and Shuo Yang and Christopher Chou and Banghua Zhu and Lianmin Zheng and Kurt Keutzer and Joseph E. Gonzalez and Ion Stoica},
+  title     = {{S-LoRA}: Serving Thousands of Concurrent {LoRA} Adapters},
+  booktitle = {Proceedings of Machine Learning and Systems},
+  volume    = {6},
+  year      = {2024},
+  url       = {https://proceedings.mlsys.org/paper_files/paper/2024/hash/906419cd502575b617cc489a1a696a67-Abstract-Conference.html}
 }
 
 % [41] Verification: official publisher/conference page
@@ -441,40 +624,82 @@
   month     = apr
 }
 
+% [47] Verification: official publisher/conference page
+% Seed chain: JITServe ref. 58
+@inproceedings{cassini,
+  author    = {Sudarsanan Rajasekaran and Manya Ghobadi and Aditya Akella},
+  title     = {{CASSINI}: {Network-Aware} Job Scheduling in Machine Learning Clusters},
+  booktitle = {21st USENIX Symposium on Networked Systems Design and Implementation (NSDI 24)},
+  year      = {2024},
+  isbn      = {978-1-939133-39-7},
+  address   = {Santa Clara, CA},
+  pages     = {1403--1420},
+  url       = {https://www.usenix.org/conference/nsdi24/presentation/rajasekaran},
+  publisher = {USENIX Association},
+  month     = apr
+}
+
+% [48] Verification: official publisher/conference page
+% Seed chain: JITServe ref. 56
+@inproceedings{muserve,
+  author    = {Haoran Qiu and Weichao Mao and Archit Patke and Shengkun Cui and Saurabh Jha and Chen Wang and Hubertus Franke and Zbigniew Kalbarczyk and Tamer Ba{\c s}ar and Ravishankar K. Iyer},
+  title     = {Power-aware Deep Learning Model Serving with {$\mu$-Serve}},
+  booktitle = {2024 USENIX Annual Technical Conference (USENIX ATC 24)},
+  year      = {2024},
+  isbn      = {978-1-939133-41-0},
+  address   = {Santa Clara, CA},
+  pages     = {75--93},
+  url       = {https://www.usenix.org/conference/atc24/presentation/qiu},
+  publisher = {USENIX Association},
+  month     = jul
+}
+
 % [49] Verification: arXiv official BibTeX endpoint
 % Seed chain: JITServe ref. 41
 @misc{andes,
-  title         = {Andes: Defining and Enhancing Quality-of-Experience in LLM-Based Text Streaming Services},
-  author        = {Jiachen Liu and Jae-Won Chung and Zhiyu Wu and Fan Lai and Myungjin Lee and Mosharaf Chowdhury},
-  year          = {2024},
-  eprint        = {2404.16283},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.DC},
-  url           = {https://arxiv.org/abs/2404.16283}
+      title={Andes: Defining and Enhancing Quality-of-Experience in LLM-Based Text Streaming Services}, 
+      author={Jiachen Liu and Jae-Won Chung and Zhiyu Wu and Fan Lai and Myungjin Lee and Mosharaf Chowdhury},
+      year={2024},
+      eprint={2404.16283},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC},
+      url={https://arxiv.org/abs/2404.16283}, 
 }
 
 % [50] Verification: arXiv official BibTeX endpoint
 % Seed chain: JITServe ref. 71
 @misc{revisit_slo_goodput,
-  title         = {Revisiting Service Level Objectives and System Level Metrics in Large Language Model Serving},
-  author        = {Zhibin Wang and Shipeng Li and Yuhang Zhou and Xue Li and Zhonghui Zhang and Nguyen Cam-Tu and Rong Gu and Chen Tian and Guihai Chen and Sheng Zhong},
-  year          = {2024},
-  eprint        = {2410.14257},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.LG},
-  url           = {https://arxiv.org/abs/2410.14257}
+      title={Revisiting Service Level Objectives and System Level Metrics in Large Language Model Serving}, 
+      author={Zhibin Wang and Shipeng Li and Yuhang Zhou and Xue Li and Zhonghui Zhang and Nguyen Cam-Tu and Rong Gu and Chen Tian and Guihai Chen and Sheng Zhong},
+      year={2025},
+      eprint={2410.14257},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2410.14257}, 
 }
 
 % [51] Verification: arXiv official BibTeX endpoint
 % Seed chain: GORGO and recent serving reference chains
 @misc{lodestar,
-  title         = {Lodestar: An Online-Learning LLM Inference Router},
-  author        = {Gangmuk Lim and Wanyu Zhao and Brighten Godfrey and Jiaxin Shan and Le Xu and Liguang Xie},
-  year          = {2026},
-  eprint        = {2606.00946},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.DC},
-  url           = {https://arxiv.org/abs/2606.00946}
+      title={Lodestar: An Online-Learning LLM Inference Router}, 
+      author={Gangmuk Lim and Wanyu Zhao and Brighten Godfrey and Jiaxin Shan and Le Xu and Liguang Xie},
+      year={2026},
+      eprint={2606.00946},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC},
+      url={https://arxiv.org/abs/2606.00946}, 
+}
+
+% [52] Verification: arXiv official BibTeX endpoint
+% Seed chain: recent serving reference chain; user-supplied PDF
+@misc{simple_is_better,
+      title={Simple is Better: Multiplication May Be All You Need for LLM Request Scheduling}, 
+      author={Dingyan Zhang and Jinbo Han and Kaixi Zhang and Xingda Wei and Sijie Shen and Chenguang Fang and Wenyuan Yu and Jingren Zhou and Rong Chen},
+      year={2026},
+      eprint={2603.15202},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC},
+      url={https://arxiv.org/abs/2603.15202}, 
 }
 
 % [53] Verification: Crossref DOI API and DOI resolver
@@ -490,6 +715,19 @@
   publisher = {Association for Computing Machinery (ACM)},
   doi       = {10.1145/3725273},
   url       = {https://doi.org/10.1145/3725273}
+}
+
+% [54] Verification: Crossref DOI API and DOI resolver
+% Seed chain: DualMap References
+@inproceedings{snapkv,
+  author    = {Yuhong Li and Yingbing Huang and Bowen Yang and Bharat Venkitesh and Acyr Locatelli and Hanchen Ye and Tianle Cai and Patrick Lewis and Deming Chen},
+  title     = {SnapKV: LLM Knows What You are Looking for Before Generation},
+  booktitle = {Advances in Neural Information Processing Systems 37},
+  year      = {2024},
+  pages     = {22947--22970},
+  publisher = {Neural Information Processing Systems Foundation, Inc. (NeurIPS)},
+  doi       = {10.52202/079017-0722},
+  url       = {https://doi.org/10.52202/079017-0722}
 }
 
 % [55] Verification: Crossref DOI API and DOI resolver
@@ -518,6 +756,47 @@
   url       = {https://doi.org/10.1145/3689031.3696098}
 }
 
+% [57] Verification: Crossref DOI API and DOI resolver
+% Seed chain: DualMap References
+@article{pqcache,
+  author    = {Hailin Zhang and Xiaodong Ji and Yilin Chen and Fangcheng Fu and Xupeng Miao and Xiaonan Nie and Weipeng Chen and Bin Cui},
+  title     = {PQCache: Product Quantization-based KVCache for Long Context LLM Inference},
+  journal   = {Proceedings of the ACM on Management of Data},
+  year      = {2025},
+  volume    = {3},
+  number    = {3},
+  pages     = {1--30},
+  publisher = {Association for Computing Machinery (ACM)},
+  doi       = {10.1145/3725338},
+  url       = {https://doi.org/10.1145/3725338}
+}
+
+% [58] Verification: Crossref DOI API and DOI resolver
+% Seed chain: DualMap References
+@inproceedings{nacl,
+  author    = {Yilong Chen and Guoxia Wang and Junyuan Shang and Shiyao Cui and Zhenyu Zhang and Tingwen Liu and Shuohuan Wang and Yu Sun and Dianhai Yu and Hua Wu},
+  title     = {NACL: A General and Effective KV Cache Eviction Framework for LLM at Inference Time},
+  booktitle = {Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)},
+  year      = {2024},
+  pages     = {7913--7926},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2024.acl-long.428},
+  url       = {https://doi.org/10.18653/v1/2024.acl-long.428}
+}
+
+% [59] Verification: Crossref DOI API and DOI resolver
+% Seed chain: DualMap References
+@inproceedings{arkvale,
+  author    = {Renze Chen and Zhuofeng Wang and Beiquan Cao and Tong Wu and Size Zheng and Xiuhong Li and Xuechao Wei and Shengen Yan and Meng Li and Yun Liang},
+  title     = {ArkVale: Efficient Generative LLM Inference with Recallable Key-Value Eviction},
+  booktitle = {Advances in Neural Information Processing Systems 37},
+  year      = {2024},
+  pages     = {113134--113155},
+  publisher = {Neural Information Processing Systems Foundation, Inc. (NeurIPS)},
+  doi       = {10.52202/079017-3595},
+  url       = {https://doi.org/10.52202/079017-3595}
+}
+
 % [60] Verification: Crossref DOI API and DOI resolver
 % Seed chain: DualMap References
 @inproceedings{kvlink,
@@ -529,6 +808,31 @@
   publisher = {Neural Information Processing Systems Foundation, Inc. (NeurIPS)},
   doi       = {10.52202/085713-4461},
   url       = {https://doi.org/10.52202/085713-4461}
+}
+
+% [61] Verification: arXiv official BibTeX endpoint
+% Seed chain: DualMap References
+@misc{shadowkv,
+      title={ShadowKV: KV Cache in Shadows for High-Throughput Long-Context LLM Inference}, 
+      author={Hanshi Sun and Li-Wen Chang and Wenlei Bao and Size Zheng and Ningxin Zheng and Xin Liu and Harry Dong and Yuejie Chi and Beidi Chen},
+      year={2025},
+      eprint={2410.21465},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2410.21465}, 
+}
+
+% [62] Verification: Crossref DOI API and DOI resolver
+% Seed chain: DualMap References
+@inproceedings{megascale_infer,
+  author    = {Ruidong Zhu and Ziheng Jiang and Chao Jin and Peng Wu and Cesar A. Stuardo and Dongyang Wang and Xinlei Zhang and Huaping Zhou and Haoran Wei and Yang Cheng and Jianzhe Xiao and Xinyi Zhang and Lingjun Liu and Haibin Lin and Li-Wen Chang and Jianxi Ye and Xiao Yu and Xuanzhe Liu and Xin Jin and Xin Liu},
+  title     = {MegaScale-Infer: Efficient Mixture-of-Experts Model Serving with Disaggregated Expert Parallelism},
+  booktitle = {Proceedings of the ACM SIGCOMM 2025 Conference},
+  year      = {2025},
+  pages     = {592--608},
+  publisher = {ACM},
+  doi       = {10.1145/3718958.3750506},
+  url       = {https://doi.org/10.1145/3718958.3750506}
 }
 
 % [63] Verification: Crossref DOI API and DOI resolver
@@ -544,52 +848,101 @@
   url       = {https://doi.org/10.1145/3676641.3716278}
 }
 
+% [64] Verification: Crossref DOI API and DOI resolver
+% Seed chain: DualMap References
+@inproceedings{toolkengpt,
+  author    = {Shibo Hao and Tianyang Liu and Zhen Wang and Zhiting Hu},
+  title     = {ToolkenGPT: Augmenting Frozen Language Models with Massive Tools via Tool Embeddings},
+  booktitle = {Advances in Neural Information Processing Systems 36},
+  year      = {2023},
+  pages     = {45870--45894},
+  publisher = {Neural Information Processing Systems Foundation, Inc. (NeurIPS)},
+  doi       = {10.52202/075280-1988},
+  url       = {https://doi.org/10.52202/075280-1988}
+}
+
 % [65] Verification: arXiv official BibTeX endpoint
 % Seed chain: JITServe ref. 74
 @misc{autogen,
-  title         = {AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation},
-  author        = {Qingyun Wu and Gagan Bansal and Jieyu Zhang and Yiran Wu and Beibin Li and Erkang Zhu and Li Jiang and Xiaoyun Zhang and Shaokun Zhang and Jiale Liu and Ahmed Hassan Awadallah and Ryen W White and Doug Burger and Chi Wang},
-  year          = {2023},
-  eprint        = {2308.08155},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.AI},
-  url           = {https://arxiv.org/abs/2308.08155}
+      title={AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation}, 
+      author={Qingyun Wu and Gagan Bansal and Jieyu Zhang and Yiran Wu and Beibin Li and Erkang Zhu and Li Jiang and Xiaoyun Zhang and Shaokun Zhang and Jiale Liu and Ahmed Hassan Awadallah and Ryen W White and Doug Burger and Chi Wang},
+      year={2023},
+      eprint={2308.08155},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2308.08155}, 
+}
+
+% [66] Verification: arXiv official BibTeX endpoint
+% Seed chain: agent-system reference chain
+@misc{agentbench,
+      title={AgentBench: Evaluating LLMs as Agents}, 
+      author={Xiao Liu and Hao Yu and Hanchen Zhang and Yifan Xu and Xuanyu Lei and Hanyu Lai and Yu Gu and Hangliang Ding and Kaiwen Men and Kejuan Yang and Shudan Zhang and Xiang Deng and Aohan Zeng and Zhengxiao Du and Chenhui Zhang and Sheng Shen and Tianjun Zhang and Yu Su and Huan Sun and Minlie Huang and Yuxiao Dong and Jie Tang},
+      year={2025},
+      eprint={2308.03688},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2308.03688}, 
+}
+
+% [67] Verification: arXiv official BibTeX endpoint
+% Seed chain: agent-system reference chain
+@misc{webarena,
+      title={WebArena: A Realistic Web Environment for Building Autonomous Agents}, 
+      author={Shuyan Zhou and Frank F. Xu and Hao Zhu and Xuhui Zhou and Robert Lo and Abishek Sridhar and Xianyi Cheng and Tianyue Ou and Yonatan Bisk and Daniel Fried and Uri Alon and Graham Neubig},
+      year={2024},
+      eprint={2307.13854},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2307.13854}, 
 }
 
 % [68] Verification: arXiv official BibTeX endpoint
 % Seed chain: JITServe ref. 44
 @misc{gaia,
-  title         = {GAIA: a benchmark for General AI Assistants},
-  author        = {Grégoire Mialon and Clémentine Fourrier and Craig Swift and Thomas Wolf and Yann LeCun and Thomas Scialom},
-  year          = {2023},
-  eprint        = {2311.12983},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.CL},
-  url           = {https://arxiv.org/abs/2311.12983}
+      title={GAIA: a benchmark for General AI Assistants}, 
+      author={Grégoire Mialon and Clémentine Fourrier and Craig Swift and Thomas Wolf and Yann LeCun and Thomas Scialom},
+      year={2023},
+      eprint={2311.12983},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2311.12983}, 
+}
+
+% [69] Verification: arXiv official BibTeX endpoint
+% Seed chain: JITServe ref. 82
+@misc{wildchat,
+      title={WildChat: 1M ChatGPT Interaction Logs in the Wild}, 
+      author={Wenting Zhao and Xiang Ren and Jack Hessel and Claire Cardie and Yejin Choi and Yuntian Deng},
+      year={2024},
+      eprint={2405.01470},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2405.01470}, 
 }
 
 % [70] Verification: arXiv official BibTeX endpoint
 % Seed chain: JITServe ref. 83
 @misc{lmsys_chat_1m,
-  title         = {LMSYS-Chat-1M: A Large-Scale Real-World LLM Conversation Dataset},
-  author        = {Lianmin Zheng and Wei-Lin Chiang and Ying Sheng and Tianle Li and Siyuan Zhuang and Zhanghao Wu and Yonghao Zhuang and Zhuohan Li and Zi Lin and Eric P. Xing and Joseph E. Gonzalez and Ion Stoica and Hao Zhang},
-  year          = {2024},
-  eprint        = {2309.11998},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.CL},
-  url           = {https://arxiv.org/abs/2309.11998}
+      title={LMSYS-Chat-1M: A Large-Scale Real-World LLM Conversation Dataset}, 
+      author={Lianmin Zheng and Wei-Lin Chiang and Ying Sheng and Tianle Li and Siyuan Zhuang and Zhanghao Wu and Yonghao Zhuang and Zhuohan Li and Zi Lin and Eric P. Xing and Joseph E. Gonzalez and Ion Stoica and Hao Zhang},
+      year={2024},
+      eprint={2309.11998},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2309.11998}, 
 }
 
 % [71] Verification: arXiv official BibTeX endpoint
 % Seed chain: JITServe ref. 66
 @misc{qwen3,
-  title         = {Qwen3 Technical Report},
-  author        = {An Yang and Anfeng Li and Baosong Yang and Beichen Zhang and Binyuan Hui and Bo Zheng and Bowen Yu and Chang Gao and Chengen Huang and Chenxu Lv and Chujie Zheng and Dayiheng Liu and Fan Zhou and Fei Huang and Feng Hu and Hao Ge and Haoran Wei and Huan Lin and Jialong Tang and Jian Yang and Jianhong Tu and Jianwei Zhang and Jianxin Yang and Jiaxi Yang and Jing Zhou and Jingren Zhou and Junyang Lin and Kai Dang and Keqin Bao and Kexin Yang and Le Yu and Lianghao Deng and Mei Li and Mingfeng Xue and Mingze Li and Pei Zhang and Peng Wang and Qin Zhu and Rui Men and Ruize Gao and Shixuan Liu and Shuang Luo and Tianhao Li and Tianyi Tang and Wenbiao Yin and Xingzhang Ren and Xinyu Wang and Xinyu Zhang and Xuancheng Ren and Yang Fan and Yang Su and Yichang Zhang and Yinger Zhang and Yu Wan and Yuqiong Liu and Zekun Wang and Zeyu Cui and Zhenru Zhang and Zhipeng Zhou and Zihan Qiu},
-  year          = {2025},
-  eprint        = {2505.09388},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.CL},
-  url           = {https://arxiv.org/abs/2505.09388}
+      title={Qwen3 Technical Report}, 
+      author={An Yang and Anfeng Li and Baosong Yang and Beichen Zhang and Binyuan Hui and Bo Zheng and Bowen Yu and Chang Gao and Chengen Huang and Chenxu Lv and Chujie Zheng and Dayiheng Liu and Fan Zhou and Fei Huang and Feng Hu and Hao Ge and Haoran Wei and Huan Lin and Jialong Tang and Jian Yang and Jianhong Tu and Jianwei Zhang and Jianxin Yang and Jiaxi Yang and Jing Zhou and Jingren Zhou and Junyang Lin and Kai Dang and Keqin Bao and Kexin Yang and Le Yu and Lianghao Deng and Mei Li and Mingfeng Xue and Mingze Li and Pei Zhang and Peng Wang and Qin Zhu and Rui Men and Ruize Gao and Shixuan Liu and Shuang Luo and Tianhao Li and Tianyi Tang and Wenbiao Yin and Xingzhang Ren and Xinyu Wang and Xinyu Zhang and Xuancheng Ren and Yang Fan and Yang Su and Yichang Zhang and Yinger Zhang and Yu Wan and Yuqiong Liu and Zekun Wang and Zeyu Cui and Zhenru Zhang and Zhipeng Zhou and Zihan Qiu},
+      year={2025},
+      eprint={2505.09388},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2505.09388}, 
 }
 
 % [72] Verification: Crossref DOI API and DOI resolver
@@ -650,11 +1003,24 @@
   url       = {https://doi.org/10.1145/258533.258660}
 }
 
+% [76] Verification: Crossref DOI API and DOI resolver
+% Seed chain: cluster-scheduling reference chain
+@inproceedings{borg,
+  author    = {Abhishek Verma and Luis Pedrosa and Madhukar Korupolu and David Oppenheimer and Eric Tune and John Wilkes},
+  title     = {Large-scale cluster management at Google with Borg},
+  booktitle = {Proceedings of the Tenth European Conference on Computer Systems},
+  year      = {2015},
+  pages     = {1--17},
+  publisher = {ACM},
+  doi       = {10.1145/2741948.2741964},
+  url       = {https://doi.org/10.1145/2741948.2741964}
+}
+
 % [77] Verification: Crossref DOI API and DOI resolver
 % Seed chain: cluster-scheduling reference chain
 @inproceedings{omega,
   author    = {Malte Schwarzkopf and Andy Konwinski and Michael Abd-El-Malek and John Wilkes},
-  title = {Omega: Flexible, Scalable Schedulers for Large Compute Clusters},
+  title     = {Omega},
   booktitle = {Proceedings of the 8th ACM European Conference on Computer Systems},
   year      = {2013},
   pages     = {351--364},
@@ -706,183 +1072,4 @@
   publisher = {Association for Computing Machinery (ACM)},
   doi       = {10.1145/2534169.2486019},
   url       = {https://doi.org/10.1145/2534169.2486019}
-}
-
-% [03] Verification: existing RAVEL sample.bib
-% Seed chain: existing bibliography
-@misc{solyx,
-  author        = {Aleks Bernhard and Nithin Katla},
-  title         = {Solyx {AI} Grid: Hardware-Telemetry-Aware Routing Across Geographically Distributed {GPU} Clusters},
-  year          = {2026},
-  eprint        = {2606.15050},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.DC},
-  doi           = {10.48550/arXiv.2606.15050},
-  note          = {arXiv:2606.15050v1}
-}
-
-% [10] Verification: existing RAVEL sample.bib
-% Seed chain: existing bibliography; JITServe ref. 39
-@inproceedings{adaserve,
-  author    = {Zikun Li and Zhuofu Chen and Remi Delacourt and Gabriele Oliaro and Zeyu Wang and Qinghan Chen and Shuhuai Lin and April Yang and Zhihao Zhang and Zhuoming Chen and Yi-Hsiang Lai and Xinhao Cheng and Xupeng Miao and Zhihao Jia},
-  title     = {{AdaServe}: Accelerating Multi-{SLO} {LLM} Serving with {SLO}-Customized Speculative Decoding},
-  booktitle = {Proceedings of the 21st European Conference on Computer Systems},
-  series    = {EuroSys '26},
-  year      = {2026},
-  pages     = {36--54},
-  publisher = {ACM},
-  doi       = {10.1145/3767295.3769315}
-}
-
-% [19] Verification: Crossref DOI API and DOI resolver
-% Seed chain: JITServe ref. 12
-@inproceedings{deepspeed_inference,
-  author    = {Reza Yazdani Aminabadi and Samyam Rajbhandari and Ammar Ahmad Awan and Cheng Li and Du Li and Elton Zheng and Olatunji Ruwase and Shaden Smith and Minjia Zhang and Jeff Rasley and Yuxiong He},
-  title     = {DeepSpeed- Inference: Enabling Efficient Inference of Transformer Models at Unprecedented Scale},
-  booktitle = {SC22: International Conference for High Performance Computing, Networking, Storage and Analysis},
-  year      = {2022},
-  pages     = {1--15},
-  publisher = {IEEE},
-  doi       = {10.1109/sc41404.2022.00051},
-  url       = {https://doi.org/10.1109/sc41404.2022.00051}
-}
-
-% [22] Verification: arXiv official BibTeX endpoint
-% Seed chain: JITServe ref. 17
-@misc{flashattention2,
-  title         = {FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning},
-  author        = {Tri Dao},
-  year          = {2023},
-  eprint        = {2307.08691},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.LG},
-  url           = {https://arxiv.org/abs/2307.08691}
-}
-
-% [28] Verification: official publisher/conference page
-% Seed chain: Preble/JITServe reference chains
-@inproceedings{serverlessllm,
-  author    = {Yao Fu and Leyang Xue and Yeqi Huang and Andrei-Octavian Brabete and Dmitrii Ustiugov and Yuvraj Patel and Luo Mai},
-  title     = {{ServerlessLLM}: {Low-Latency} Serverless Inference for Large Language Models},
-  booktitle = {18th USENIX Symposium on Operating Systems Design and Implementation (OSDI 24)},
-  year      = {2024},
-  isbn      = {978-1-939133-40-3},
-  address   = {Santa Clara, CA},
-  pages     = {135--153},
-  url       = {https://www.usenix.org/conference/osdi24/presentation/fu},
-  publisher = {USENIX Association},
-  month     = jul
-}
-
-% [30] Verification: Crossref DOI API and DOI resolver
-% Seed chain: Preble/Mooncake reference chains
-@inproceedings{specinfer,
-  author    = {Xupeng Miao and Gabriele Oliaro and Zhihao Zhang and Xinhao Cheng and Zeyu Wang and Zhengxin Zhang and Rae Ying Yee Wong and Alan Zhu and Lijie Yang and Xiaoxiang Shi and Chunan Shi and Zhuoming Chen and Daiyaan Arfeen and Reyna Abhyankar and Zhihao Jia},
-  title     = {SpecInfer: Accelerating Large Language Model Serving with Tree-based Speculative Inference and Verification},
-  booktitle = {Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 3},
-  year      = {2024},
-  pages     = {932--949},
-  publisher = {ACM},
-  doi       = {10.1145/3620666.3651335},
-  url       = {https://doi.org/10.1145/3620666.3651335}
-}
-
-% [37] Verification: Crossref DOI API and DOI resolver
-% Seed chain: GORGO/SkyWalker reference chains
-@inproceedings{helix,
-  author    = {Yixuan Mei and Yonghao Zhuang and Xupeng Miao and Juncheng Yang and Zhihao Jia and Rashmi Vinayak},
-  title     = {Helix: Serving Large Language Models over Heterogeneous GPUs and Network via Max-Flow},
-  booktitle = {Proceedings of the 30th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 1},
-  year      = {2025},
-  pages     = {586--602},
-  publisher = {ACM},
-  doi       = {10.1145/3669940.3707215},
-  url       = {https://doi.org/10.1145/3669940.3707215}
-}
-
-% [47] Verification: official publisher/conference page
-% Seed chain: JITServe ref. 58
-@inproceedings{cassini,
-  author    = {Sudarsanan Rajasekaran and Manya Ghobadi and Aditya Akella},
-  title     = {{CASSINI}: {Network-Aware} Job Scheduling in Machine Learning Clusters},
-  booktitle = {21st USENIX Symposium on Networked Systems Design and Implementation (NSDI 24)},
-  year      = {2024},
-  isbn      = {978-1-939133-39-7},
-  address   = {Santa Clara, CA},
-  pages     = {1403--1420},
-  url       = {https://www.usenix.org/conference/nsdi24/presentation/rajasekaran},
-  publisher = {USENIX Association},
-  month     = apr
-}
-
-% [52] Verification: arXiv official BibTeX endpoint
-% Seed chain: recent serving reference chain; user-supplied PDF
-@misc{simple_is_better,
-  title         = {Simple is Better: Multiplication May Be All You Need for LLM Request Scheduling},
-  author        = {Dingyan Zhang and Jinbo Han and Kaixi Zhang and Xingda Wei and Sijie Shen and Chenguang Fang and Wenyuan Yu and Jingren Zhou and Rong Chen},
-  year          = {2026},
-  eprint        = {2603.15202},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.DC},
-  url           = {https://arxiv.org/abs/2603.15202}
-}
-
-% [40] Verification: official publisher/conference page
-% Seed chain: JITServe and DualMap reference chains
-@inproceedings{slora,
-  author    = {Ying Sheng and Shiyi Cao and Dacheng Li and Coleman Hooper and Nicholas Lee and Shuo Yang and Christopher Chou and Banghua Zhu and Lianmin Zheng and Kurt Keutzer and Joseph E. Gonzalez and Ion Stoica},
-  title     = {{S-LoRA}: Serving Thousands of Concurrent {LoRA} Adapters},
-  booktitle = {Proceedings of Machine Learning and Systems},
-  volume    = {6},
-  year      = {2024},
-  url       = {https://proceedings.mlsys.org/paper_files/paper/2024/hash/906419cd502575b617cc489a1a696a67-Abstract-Conference.html}
-}
-
-% [64] Verification: Crossref DOI API and DOI resolver
-% Seed chain: DualMap References
-@inproceedings{toolkengpt,
-  author    = {Shibo Hao and Tianyang Liu and Zhen Wang and Zhiting Hu},
-  title     = {ToolkenGPT: Augmenting Frozen Language Models with Massive Tools via Tool Embeddings},
-  booktitle = {Advances in Neural Information Processing Systems 36},
-  year      = {2023},
-  pages     = {45870--45894},
-  publisher = {Neural Information Processing Systems Foundation, Inc. (NeurIPS)},
-  doi       = {10.52202/075280-1988},
-  url       = {https://doi.org/10.52202/075280-1988}
-}
-
-% [66] Verification: arXiv official BibTeX endpoint
-% Seed chain: agent-system reference chain
-@misc{agentbench,
-  title         = {AgentBench: Evaluating LLMs as Agents},
-  author        = {Xiao Liu and Hao Yu and Hanchen Zhang and Yifan Xu and Xuanyu Lei and Hanyu Lai and Yu Gu and Hangliang Ding and Kaiwen Men and Kejuan Yang and Shudan Zhang and Xiang Deng and Aohan Zeng and Zhengxiao Du and Chenhui Zhang and Sheng Shen and Tianjun Zhang and Yu Su and Huan Sun and Minlie Huang and Yuxiao Dong and Jie Tang},
-  year          = {2025},
-  eprint        = {2308.03688},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.AI},
-  url           = {https://arxiv.org/abs/2308.03688}
-}
-
-% [67] Verification: arXiv official BibTeX endpoint
-% Seed chain: agent-system reference chain
-@misc{webarena,
-  title         = {WebArena: A Realistic Web Environment for Building Autonomous Agents},
-  author        = {Shuyan Zhou and Frank F. Xu and Hao Zhu and Xuhui Zhou and Robert Lo and Abishek Sridhar and Xianyi Cheng and Tianyue Ou and Yonatan Bisk and Daniel Fried and Uri Alon and Graham Neubig},
-  year          = {2024},
-  eprint        = {2307.13854},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.AI},
-  url           = {https://arxiv.org/abs/2307.13854}
-}
-
-% [69] Verification: arXiv official BibTeX endpoint
-% Seed chain: JITServe ref. 82
-@misc{wildchat,
-  title         = {WildChat: 1M ChatGPT Interaction Logs in the Wild},
-  author        = {Wenting Zhao and Xiang Ren and Jack Hessel and Claire Cardie and Yejin Choi and Yuntian Deng},
-  year          = {2024},
-  eprint        = {2405.01470},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.CL},
-  url           = {https://arxiv.org/abs/2405.01470}
 }
