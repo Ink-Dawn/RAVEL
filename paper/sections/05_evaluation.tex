@@ -1,0 +1,374 @@
+\section{Evaluation}
+  \label{sec:evaluation}
+
+  We evaluate RAVEL along five dimensions.
+  \textbf{RQ1:} Does RAVEL improve request-level SLO attainment as offered load
+  increases?
+  \textbf{RQ2:} Do the gains persist across repeated runs?
+  \textbf{RQ3:} Which RAVEL mechanisms produce the end-to-end gains?
+  \textbf{RQ4:} Are replica-specific quotes accurate enough to support feasibility
+  decisions?
+  \textbf{RQ5:} Is online replanning fast enough for the serving control path?
+
+  The main matrix reports one 500-request replay per
+  policy--workload--load cell.
+  A separate five-run campaign evaluates replay-to-replay variation at
+  $16\times$ load.
+  These two result contexts are reported separately and are not averaged
+  together.
+
+  \begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]
+    {figures/end_to_end.pdf}
+    \caption{
+    End-to-end results for LMSYS (top), Burst (middle), and DeepResearch
+    (bottom), using one 500-request replay per policy--workload--load cell.
+    The first column reports request-level SLO attainment as offered load
+    increases from $1\times$ to $16\times$; the remaining columns report
+    per-request TTFT, E2E, and TPOT distributions at $1\times$.
+    In each box plot, the red line marks the median, the box spans the
+    25th--75th percentiles, the whiskers show the 10th--90th percentiles,
+    and the inverted triangle marks the mean.
+    RAVEL maintains the highest SLO attainment as contention grows and
+    outperforms the best baseline on all three workloads.
+    }
+    \label{fig:main-results}
+  \end{figure*}
+
+
+  \subsection{Experimental Setup}
+  \label{sec:eval:setup}
+
+  \paragraph{Testbed.}
+  All policies run on the same five-replica physical-WAN testbed.
+  The replicas are distributed across three geographic clusters in a $2/2/1$
+  configuration.
+  Each replica serves Qwen3-1.7B on one NVIDIA RTX~4090 using
+  vLLM~0.8.5.post1's V0 scheduler and bfloat16 weights.
+  The directed physical WAN paths have measured RTTs ranging from
+  10.1 to 37.9\,ms.
+  The remaining common engine and replay settings are summarized in
+  Table~\ref{tab:eval-setup}.
+
+  \begin{table}[t]
+    \centering
+    \small
+    \caption{
+    Common experimental configuration.
+    }
+    \label{tab:eval-setup}
+    \setlength{\tabcolsep}{3pt}
+    \renewcommand{\arraystretch}{1.08}
+    \begin{tabular}{@{}p{0.34\columnwidth}p{0.60\columnwidth}@{}}
+      \toprule
+      \textbf{Component} & \textbf{Configuration} \\
+      \midrule
+      Serving topology
+        & 5 replicas in 3 clusters ($2/2/1$) \\
+      Model and hardware
+        & Qwen3-1.7B; one RTX~4090 per replica \\
+      Serving engine
+        & vLLM~0.8.5.post1 V0; bfloat16 \\
+      Maximum model length
+        & 16,384 tokens \\
+      Engine capacity
+        & 64 sequences; 16,384 batched tokens \\
+      KV-cache configuration
+        & Block size 16; automatic prefix caching \\
+      Directed WAN RTT
+        & 10.1--37.9\,ms \\
+      Requests per main cell
+        & 500; seed 42 \\
+      Offered-load factors
+        & $1,2,4,8,12,16\times$ \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+
+  \paragraph{Workloads and SLOs.}
+  We use three workloads that expose different sources of placement uncertainty.
+  \emph{LMSYS} represents heterogeneous conversational traffic.
+  \emph{Burst} preserves the request contents of its source trace but replaces
+  the arrival timestamps with a bursty schedule, stressing decisions made from
+  transient queue state.
+  \emph{DeepResearch} represents multi-stage completion workflows whose output
+  demand depends on request-visible stage metadata.
+
+  Each request carries an SLO class and a request-specific multiplier.
+  The base budgets are 0.8\,s for TTFT, 80\,ms for TBT, and 8\,s for completion
+  latency, after which the configured multiplier is applied.
+  A LATENCY request succeeds only if it satisfies both its TTFT bound and every
+  TBT bound.
+  THROUGHPUT and COLLECTIVE requests succeed if their end-to-end completion
+  latency remains within their completion budget.
+
+  \paragraph{Replay protocol.}
+  We replay each workload in open loop.
+  At load factor $x$, every original inter-arrival interval is divided by $x$
+  while request order, contents, output metadata, and SLOs are preserved.
+  Before each cell, we reset replica prefix caches and start a fresh policy run.
+  All policies receive the same request-visible information and are evaluated
+  under the same model, topology, WAN paths, and replay schedule.
+  The main matrix contains one 500-request replay per cell.
+  The repeated-run campaign is conducted separately using five paired replays at
+  $16\times$ load.
+
+  \paragraph{Policies and metrics.}
+  We compare RAVEL with RoundRobin (RR), LeastLoad (LL), RD, DualMap, and
+  SkyWalker.
+  For the single-run headline results, the reported numerical gains use DualMap
+  as the comparison policy.
+  The repeated-run figure follows the designated best-baseline protocol used by
+  that campaign.
+
+  Our primary metric is request-level SLO attainment.
+  Secondary metrics are time to first token (TTFT), end-to-end latency (E2E), and
+  time per output token (TPOT).
+  TTFT and E2E are measured from arrival at the Router, including time spent
+  under Router ownership as well as WAN and engine delay.
+
+  \subsection{End-to-End Performance}
+  \label{sec:eval:e2e}
+
+  RAVEL's advantage grows with contention, when a placement selected from
+  arrival-time state is more likely to become stale before engine handoff.
+  As shown in Figure~\ref{fig:main-results}, RAVEL maintains the highest
+  request-level SLO attainment across the evaluated load sweep.
+
+  At $16\times$ load, RAVEL improves SLO attainment over DualMap by
+  8.8 percentage points on LMSYS, 11.2 percentage points on Burst, and
+  13.4 percentage points on DeepResearch.
+  The corresponding P95 TTFT reductions range from 49.1\% to 80.5\%, while
+  P95 E2E reductions range from 15.5\% to 56.8\%.
+
+  These gains are consistent with RAVEL retaining the ability to revise a
+  tentative placement while the request remains Router-owned.
+  As load increases, queueing and service estimates change more rapidly, making
+  an irrevocable decision based only on arrival-time state increasingly costly.
+  RAVEL can respond to these changes until handoff while prospective demand
+  accounting remains active from the moment of arrival.
+
+  The $1\times$ distributions in Figure~\ref{fig:main-results} show why raw
+  latency alone is not sufficient to characterize this objective.
+  The policies' latency distributions overlap for several metrics, yet RAVEL
+  can still attain more request-level SLOs.
+  It selectively uses available slack: a request with sufficient slack may
+  tolerate a small additional delay if doing so preserves a scarce
+  SLO-feasible replica for a more region-constrained request.
+  Thus, the relevant objective is not to minimize every individual latency
+  sample, but to allocate heterogeneous regional capacity so that more requests
+  satisfy their own SLOs.
+
+  \subsection{Repeated-Run Robustness}
+  \label{sec:eval:robustness}
+
+  The single-run matrix establishes behavior across workloads and offered loads,
+  but one replay per cell cannot quantify replay-to-replay variation.
+  We therefore conduct a separate five-run campaign at $16\times$ load.
+  For each workload, every run contains a complete 500-request replay, and the
+  RAVEL result is paired with the result from the campaign's designated
+  best baseline under the same run conditions.
+  Each paired run contributes one difference in request-level SLO attainment;
+  requests within a replay are not treated as independent statistical samples.
+
+  \begin{figure}[tb]
+      \centering
+      \includegraphics[width=\columnwidth]
+      {figures/campaign_a_gain_dotwhisker_16x.pdf}
+      \caption{
+      \textbf{Repeated-run robustness at $16\times$ load.}
+      Each small circle reports the paired RAVEL--baseline difference in
+      request-level SLO attainment for one complete 500-request replay.
+      The large diamond marks the mean over five paired runs, and the horizontal
+      whisker shows the corresponding 95\% confidence interval computed from
+      the five run-level differences.
+      The plotted comparison uses the designated best baseline for the
+      corresponding workload.
+      Mean gains are 4.1, 7.5, and 17.4 percentage points for LMSYS, Burst,
+      and DeepResearch, respectively.
+      }
+      \label{fig:repeated-runs}
+  \end{figure}
+
+  The repeated runs preserve RAVEL's advantage on all three workloads.
+  The mean gains are 4.1 percentage points on LMSYS, 7.5 percentage points on
+  Burst, and 17.4 percentage points on DeepResearch.
+  For each workload, the 95\% confidence interval over the five paired
+  run-level differences lies above zero.
+  This supports the conclusion that the average improvement is reproducible
+  under replay variation, while not implying that every individual request or
+  every possible run must improve.
+
+  The five-run values are separate from the single-run matrix in
+  Figure~\ref{fig:main-results}.
+  They use a different experimental batch and statistical unit, so the
+  17.4-percentage-point DeepResearch value should not be substituted for the
+  13.4-percentage-point single-run result.
+  The individual paired values and statistical construction are reported in
+  Appendix~\ref{app:repeated-runs}.
+
+  \subsection{Mechanism Contributions}
+  \label{sec:eval:mechanism}
+
+  Both pre-handoff revisability and engine-local TBT protection contribute to
+  RAVEL's end-to-end SLO gains.
+  We isolate these mechanisms on Burst at $12\times$, where burst-driven queue
+  changes are pronounced but the system has not collapsed into universal
+  overload.
+
+  We compare full RAVEL with two variants.
+  \emph{FixedPlacement} retains RAVEL's SLO-aware initial placement,
+  prospective accounting, and engine-local TBT guard, but disables reassignment
+  after the initial choice.
+  It therefore isolates the value of keeping placement revisable.
+  \emph{NoTBTGuard} retains RAVEL's global routing, prospective accounting, and
+  replanning, but disables the engine-local Prefill control used to protect
+  active LATENCY Decode requests.
+
+  \begin{figure*}[tb]
+    \centering
+    \includegraphics[width=\textwidth]{figures/mechanism_breakdown.pdf}
+    \caption{
+    Mechanism ablation on the 500-request Burst workload at $12\times$ load.
+    FixedPlacement retains RAVEL's initial SLO-aware placement, prospective
+    accounting, and TBT guard but disables pre-handoff reassignment.
+    NoTBTGuard retains global RAVEL routing and replanning but disables the
+    engine-local TBT guard.
+    The panels report (a) request-level SLO attainment, (b) P95 TTFT,
+    (c) the TBT-violation rate among LATENCY requests, and (d) P95 E2E.
+    Higher is better only for SLO attainment.
+    }
+    \label{fig:mechanism-breakdown}
+  \end{figure*}
+
+  Full RAVEL attains 81.2\% request-level SLO attainment.
+  FixedPlacement attains 68.0\%, a reduction of 13.2 percentage points, while
+  NoTBTGuard attains 71.4\%, a reduction of 9.8 percentage points.
+  Thus, neither a strong initial placement nor global replanning without local
+  TBT protection is sufficient.
+
+  The component-level metrics explain these losses.
+  FixedPlacement obtains a lower P95 TTFT than RAVEL
+  (2.490 versus 2.905\,s), but its LATENCY-request TBT-violation rate increases
+  from 6.6\% to 37.6\%.
+  Its P95 E2E also rises to 21.347\,s, compared with 18.985\,s for RAVEL.
+  An irrevocable geographic choice can therefore create downstream Decode
+  pressure that the remaining local mechanism cannot fully repair.
+
+  NoTBTGuard reduces P95 TTFT further to 1.951\,s and has nearly the same P95
+  E2E as RAVEL (18.958 versus 18.985\,s), yet its TBT-violation rate reaches
+  42.0\%.
+  Optimizing aggregate TTFT or E2E is therefore insufficient when individual
+  requests also carry inter-token deadlines.
+
+  Because FixedPlacement retains prospective accounting, this experiment
+  specifically measures the contribution of placement revisability while holding
+  that accounting mechanism fixed.
+  It should not be interpreted as an independent ablation of prospective
+  accounting itself.
+
+  \subsection{Quote Accuracy}
+  \label{sec:eval:quote}
+
+  RAVEL's quotes are useful only if they preserve the feasibility decision for
+  each request, rather than merely achieving a small average prediction error.
+  In the workload-$16\times$ analysis, the empirical false-feasible and
+  false-infeasible rates are 6.2\% and 1.0\%, respectively.
+
+  For a selected final-handoff record $i$, we define normalized quote error as
+  \[
+    e_i =
+    \frac{\widehat{L}_i-L_i}{B_i},
+  \]
+  where $\widehat{L}_i$ is the predicted latency, $L_i$ is the observed latency,
+  and $B_i$ is the corresponding request-specific SLO budget.
+  For LATENCY requests, $L_i$ denotes TTFT; for completion-oriented requests,
+  $L_i$ denotes E2E.
+  Negative error is optimistic, whereas positive error is conservative.
+
+  \begin{figure}[tb]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/quote_accuracy_figure.pdf}
+    \caption{
+    \textbf{Quote accuracy in the workload-$16\times$ analysis.}
+    Panel (a) shows the empirical CDF of normalized quote error
+    $(\widehat{L}_i-L_i)/B_i$ for LATENCY (TTFT) and completion (E2E) requests.
+    The shaded band denotes errors within $\pm10\%$ of the applicable SLO
+    budget.
+    Panel (b) reports feasibility-classification error rates over the same
+    $N=2{,}500$ selected final-handoff records.
+    Among 1,672 quoted-feasible decisions, 104 are false feasible (6.2\%);
+    among 828 quoted-infeasible decisions, 8 are false infeasible (1.0\%).
+    }
+    \label{fig:quote-accuracy}
+  \end{figure}
+
+  Figure~\ref{fig:quote-accuracy} shows that most normalized errors remain near
+  zero, although completion quotes exhibit a longer optimistic tail.
+  More importantly, the quotes usually preserve the decision-relevant
+  feasibility classification.
+  Of the 1,672 records quoted as feasible, 104 later violate the corresponding
+  SLO, giving a 6.2\% empirical false-feasible rate.
+  Of the 828 records quoted as infeasible, only 8 complete feasibly, giving a
+  1.0\% empirical false-infeasible rate.
+
+  These measurements evaluate the placements RAVEL actually selected and handed
+  off; they do not observe counterfactual execution on unselected replicas.
+  The reported rates therefore characterize the empirical quality of the online
+  decision signal, rather than providing a formal guarantee that every feasible
+  quote will meet its SLO.
+
+  \subsection{Planner Overhead}
+  \label{sec:eval:overhead}
+
+  RAVEL's replanning cost is small on the actual online path, while a controlled
+  benchmark shows how planner latency scales with the bounded cohort size.
+  We denote by $K$ the candidate cohort bound for one replanning pass; the
+  normal online configuration caps it at $K=64$.
+
+  \begin{figure}[tb]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/planner_overhead.pdf}
+    \caption{
+    \textbf{Planner overhead on the five-replica testbed.}
+    Panel (a) reports median planner latency as the candidate cohort bound
+    $K$ increases on a $\log_2$ scale.
+    The shaded bands span P5--P95 over 50 measured repetitions per point after
+    five warm-up repetitions; the dashed line marks the configured online
+    bound $K=64$, while $K=128$ is a stress-only point.
+    Panel (b) shows the empirical CDF of scheduling-pass latency for 281 actual
+    passes from Burst at $12\times$ load.
+    }
+    \label{fig:planner-overhead}
+  \end{figure}
+
+  On the actual Burst $12\times$ execution path, a scheduling pass takes
+  0.998\,ms at the median and 2.101\,ms at P95.
+  The mean observed cohort contains 3.65 requests, its P95 is 7, and its maximum
+  is 9.
+
+  The controlled benchmark measures the cost of approaching the configured
+  bound.
+  At $K=64$, median planner latency is 10.99\,ms for mixed cohorts and
+  20.10\,ms for completion-oriented cohorts.
+  Increasing the cohort to the stress-only value $K=128$ raises these values to
+  23.47 and 42.75\,ms, respectively.
+  The shaded ranges in Figure~\ref{fig:planner-overhead} are measurement
+  dispersion across repetitions, not confidence intervals.
+
+  The gap between the controlled bound and the observed runtime cohorts explains
+  why actual passes are much faster than the worst-case benchmark.
+  These measurements characterize the evaluated five-replica deployment;
+  extrapolating the same latency to substantially larger replica sets requires a
+  separate fleet-size study.
+
+  \paragraph{Evaluation takeaway.}
+  Together, the experiments show that RAVEL's gains persist across workloads and
+  repeated runs, arise from the combination of pre-handoff revisability and
+  engine-local protection, and are supported by decision-useful quotes and
+  millisecond-scale online planning.
+  The evidence characterizes the evaluated five-replica deployment and does not
+  constitute a formal SLO guarantee for arbitrary fleet sizes.
+
+

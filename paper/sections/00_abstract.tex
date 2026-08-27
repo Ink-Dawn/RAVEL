@@ -1,0 +1,58 @@
+%don't want date printed
+\date{}
+
+%make title bold and 14 pt font (Latex default is non-bold, 16 pt)
+\title{\Large \bf RAVEL: Reversible SLO-Aware Virtual Placement for Geo-Distributed LLM Serving}
+
+% \author{
+% {\rm Your N.\ Here}\\
+% Your Institution
+% \and
+% {\rm Second Name}\\
+% Second Institution
+% }
+
+\maketitle
+
+% Use the following at camera-ready time to suppress page numbers.
+% Comment it out when you first submit the paper for review.
+\thispagestyle{empty}
+
+
+\subsection*{Abstract}
+
+Regional capacity constraints and rising LLM inference demand are driving providers to pool GPU resources across
+geographically distributed clusters.
+Cross-region scheduling must navigate differences in WAN latency and regional
+serving conditions.
+Together, these regional differences and heterogeneous request-level SLOs make placement feasibility request-specific, so a region that is optional for one request may be the only SLO-feasible choice for another.
+When available capacity is limited, immediately finalizing placement may leave no SLO-feasible capacity for later arrivals.
+Waiting reveals more demand but leaves less time to meet the SLO.
+Conventional cross-region schedulers make a one-shot placement for each request using only the demand
+visible at arrival. Later arrivals cannot revise earlier placements, even when the affected requests have not yet
+entered the serving engine.
+The key observation is that every arrival can enter capacity planning immediately while placement remains revisable
+until engine handoff.
+We present RAVEL, an SLO-aware serving system that realizes this separation through tentative
+placement, immediate demand accounting, and bounded pre-handoff replanning.
+On a vLLM deployment with five serving replicas across three clusters connected by physical
+WAN paths, RAVEL improves request-level SLO attainment over the best baseline
+by 8.8, 11.2, and 13.4 percentage points on LMSYS, Burst, and DeepResearch,
+respectively, while reducing P95 TTFT by 49.1--80.5\% and P95 end-to-end
+latency by 15.5--56.8\%, at $16\times$ load.
+
+
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/motivation.pdf}
+    \caption{
+    \textbf{Information--slack tradeoff.}
+    Fixed-delay late binding consumes SLO slack to observe more demand;
+    RAVEL accounts demand immediately and selectively uses a
+    request-specific, slack-bounded mobility hold for pre-handoff replanning.
+    }
+    \label{fig:motivation}
+\end{figure}
+
+

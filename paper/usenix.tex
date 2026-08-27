@@ -1963,15 +1963,18 @@ clusters.  Let
 RAVEL uses the smallest positive remote RTT as the
 observation scale and bounds it by available slack:
 \begin{equation}
-    \Delta_i
-    =
-    \begin{cases}
-      \min\!\left(\min\mathcal{D}_i,\mathrm{slack}_i\right),
-        & \text{if $i$ is non-LATENCY, $\mathrm{Burst}_i=1$, and}\\
-        & \quad \text{$i$ has at least two feasible clusters},\\[1mm]
-      0, & \text{otherwise.}
-    \end{cases}
-    \label{eq:appendix:mobility-hold}
+\Delta_i =
+\begin{cases}
+\min\!\left(\min \mathcal{D}_i,\mathrm{slack}_i\right),
+&
+\substack{
+\text{if $i$ is non-LATENCY, $\mathrm{Burst}_i=1$,}\\
+\text{and $i$ has at least two feasible clusters$,$}
+}
+\\[2mm]
+0, & \text{otherwise.}
+\end{cases}
+\label{eq:appendix:mobility-hold}
 \end{equation}
 LATENCY requests are not deliberately held.  They may participate in
 pre-handoff reassignment only when a remote SLO-feasible target exists.
@@ -2184,12 +2187,14 @@ The held-out schema-v2 semantic profile indexes
 $(\textit{stage\_id},\textit{stage\_num})$.  For covered context $x$ it stores
 the training mean and a finite-sample $q_{0.95}$ value.  Lookup follows
 \begin{equation}
-    x=(\textit{stage\_id},\textit{stage\_num})
-    \;\rightarrow\;
-    \textit{stage\_id aggregate}
-    \;\rightarrow\;
-    \text{declared routing hint}.
-    \label{eq:appendix:output-profile-fallback}
+\begin{aligned}
+x &= (\textit{stage\_id},\textit{stage\_num})
+   \;\rightarrow\;
+   \textit{stage\_id aggregate} \\
+  &\rightarrow\;
+   \text{declared routing hint}.
+\end{aligned}
+\label{eq:appendix:output-profile-fallback}
 \end{equation}
 Neither the current request's realized output length nor future arrivals enter
 this lookup.

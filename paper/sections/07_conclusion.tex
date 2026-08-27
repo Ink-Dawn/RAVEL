@@ -1,0 +1,31 @@
+\section{Conclusion}
+
+Geo-distributed LLM serving must route requests online even though regional
+capacity is request-dependent: a region that is interchangeable for one
+request may be essential for satisfying another request's SLO.
+Later arrivals can reveal this opportunity cost, but waiting for such
+information consumes the same requests' SLO slack.
+RAVEL addresses this tension by separating demand visibility from placement
+commitment.
+It accounts each request immediately at a tentative replica, while keeping
+that placement revisable as long as the request remains Router-owned and
+committing it only at successful engine handoff.
+Across LMSYS, bursty traffic, and multi-stage DeepResearch workloads, RAVEL
+consistently improves request-level SLO attainment while maintaining
+competitive latency, with particularly large gains under several
+high-contention settings.
+More broadly, RAVEL shows that an online serving system need not postpone
+demand accounting to preserve the flexibility to exploit information revealed
+by later arrivals.
+
+
+
+
+
+
+
+
+
+
+
+

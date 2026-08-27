@@ -1,0 +1,544 @@
+\section{RAVEL Design}
+\label{sec:design}
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/system.pdf}
+    \caption{
+    \textbf{RAVEL request lifecycle and ownership boundary.}
+    RAVEL combines each request's prompt and SLO with calibrated service
+    profiles and live replica state to construct request-specific replica
+    quotes.
+    It then creates a virtual placement and immediately attributes the
+    request's prospective demand to its tentative replica.
+    While the request remains Router-owned, subsequent arrivals may trigger
+    bounded reassignment together with an atomic transfer of its prospective
+    accounting.
+    Capacity-gated dispatch initiates engine handoff; only a successful
+    handoff makes placement final.
+    Pending, running, and completed engine state continuously feeds back into
+    later quotes and accounting updates.
+    }
+    \label{fig:ravel-overview}
+\end{figure*}
+
+
+\subsection{Overview}
+\label{sec:design:overview}
+
+RAVEL realizes immediate accounting and deferred commitment through two
+ownership states separated by successful engine handoff.
+While Router-owned, each request has exactly one tentative replica owner and
+one set of prospective charges; after handoff, its placement is final and is
+no longer eligible for Router-level reassignment.
+This ownership boundary lets RAVEL exploit newly observed demand without
+migrating engine-managed KV state.
+
+Figure~\ref{fig:ravel-overview} summarizes the request lifecycle.
+On arrival, RAVEL constructs request-specific SLO quotes for all candidate
+replicas, selects an initial virtual placement, and immediately accounts the
+request's prospective demand at that replica.
+As later arrivals and engine feedback change the visible state, RAVEL may
+replan a bounded cohort of still-Router-owned requests.
+A reassignment transfers both tentative queue ownership and replica-dependent
+prospective charges.
+Requests cross a shallow, capacity-gated dispatch frontier before handoff.
+A rejected handoff restores Router ownership, whereas successful handoff
+transfers ownership to the serving engine and makes placement final.
+
+The design maintains five invariants.
+First, each Router-owned request has exactly one tentative owner.
+Second, its prospective demand is represented exactly once and follows any
+reassignment.
+Third, only Router-owned requests may change placement.
+Fourth, replanning uses only causally observed requests and serving state and
+is bounded in both observation time and cohort size.
+Finally, successful engine handoff is the only commitment event.
+The following subsections describe replica quotes, prospective accounting,
+bounded replanning, unified placement and reversible dispatch, and the
+handoff boundary that enforces these invariants.
+
+
+```latex
+\subsection{Replica SLO Quotes}
+\label{sec:design:feasibility}
+
+Every placement decision consumes a \emph{replica SLO quote}: a causal,
+request-specific summary of whether a candidate replica is predicted to
+satisfy the request's SLO and of the cost of serving it there.
+Quotes provide a common placement interface across heterogeneous request
+semantics without collapsing TTFT, TBT, and completion constraints into an
+arbitrary weighted score.
+Prior phase-aware serving systems show that Prefill and Decode have distinct
+resource demands and can interfere under shared execution
+~\cite{sarathi,distserve,splitwise,shuffleinfer}.
+RAVEL incorporates these effects into replica-specific feasibility estimates
+rather than introducing a new phase scheduler.
+
+Let $c\in\mathcal{C}$ denote a serving cluster,
+$\mathcal{R}_c$ its replicas, $c(r)$ the cluster containing replica $r$, and
+$\mathcal{R}=\bigcup_c\mathcal{R}_c$.
+For request $i$ and candidate replica $r$, RAVEL constructs
+\begin{equation}
+    Q_{i,r}(t)
+    =
+    \left(
+        \Phi_{i,r}(t),
+        \widehat{T}^{\mathrm{obj}}_{i,r}(t),
+        \mathbf{z}_{i,r}(t)
+    \right),
+    \label{eq:ravel-quote}
+\end{equation}
+where $\Phi_{i,r}(t)$ indicates whether all SLO constraints applicable to
+request $i$ are predicted to hold,
+$\widehat{T}^{\mathrm{obj}}_{i,r}(t)$ is the request-class-specific predicted
+objective used for ordering and slack calculations, and
+$\mathbf{z}_{i,r}(t)$ contains secondary capacity-pressure signals used by the
+placement policy.
+The quote depends only on information causally available at time $t$ and is an
+online prediction rather than a formal SLO guarantee.
+
+RAVEL combines calibrated cluster-level service profiles with replica-local
+live and prospective state.
+At active Decode concurrency $n$, it models Prefill service for a prompt of
+size $p$ as
+$P_{c,n}(p)=b_{c,n}+a_{c,n}p$ and uses $d_c(n)$ for the calibrated
+post-first-token Decode time per token.
+For request $i$ and candidate replica $r$, let
+$\widehat{S}^{\mathrm{pre}}_{i,r}$ denote its predicted Prefill-side service
+delay.
+This estimate includes live engine Prefill debt, Router-owned prompt work ahead
+of $i$, the request's own prompt demand, and tentative assignments selected
+earlier in the current planning pass.
+RAVEL then predicts
+\begin{equation}
+    \widehat{\mathrm{TTFT}}_{i,r}(t)
+    =
+    (t-a_i)
+    +
+    \rho_{o_i,c(r)}
+    +
+    \widehat{S}^{\mathrm{pre}}_{i,r},
+    \label{eq:ravel-ttft}
+\end{equation}
+where $a_i$ is the request arrival time and
+$\rho_{o_i,c(r)}$ is the directed WAN delay from request origin $o_i$ to
+cluster $c(r)$.
+The elapsed term $(t-a_i)$ directly charges time already spent under Router
+ownership against the remaining TTFT budget.
+Thus, even with unchanged WAN and serving conditions, a previously feasible
+replica may become infeasible as observation consumes request slack.
+
+For a LATENCY request with TTFT and TBT bounds
+$D_i^{\mathrm{TTFT}}$ and $D_i^{\mathrm{TBT}}$, RAVEL evaluates the two
+constraints independently:
+\begin{equation}
+    \Phi^{\mathrm{lat}}_{i,r}(t)
+    =
+    \mathbf{1}\!\left[
+        \widehat{\mathrm{TTFT}}_{i,r}(t)
+        \le D_i^{\mathrm{TTFT}}
+        \;\land\;
+        d_{c(r)}(m_{i,r})
+        \le D_i^{\mathrm{TBT}}
+    \right],
+    \label{eq:ravel-latency-feasible}
+\end{equation}
+where $m_{i,r}$ conservatively summarizes live and prospective Decode
+concurrency while logically deduplicating request identifiers.
+Feasibility therefore requires both bounds to hold: a lower predicted TTFT
+cannot compensate for a predicted TBT violation.
+
+Completion-oriented requests instead require a prediction of total
+request-visible service time.
+RAVEL distinguishes expected output demand
+$L_i^{\mathrm{exp}}$ from a conservative risk estimate
+$L_i^{\mathrm{risk}}$.
+Let $\widehat{T}^{\mathrm{risk}}_{i,r}(t)$ denote the predicted completion
+latency obtained from TTFT and the Decode service implied by
+$L_i^{\mathrm{risk}}$.
+Completion feasibility is
+\begin{equation}
+    \Phi^{\mathrm{comp}}_{i,r}(t)
+    =
+    \mathbf{1}\!\left[
+        \widehat{T}^{\mathrm{risk}}_{i,r}(t)
+        \le D_i^{\mathrm{comp}}
+    \right].
+    \label{eq:ravel-completion-feasible}
+\end{equation}
+The risk estimate gates feasibility, while the expected estimate contributes
+to shared service-pressure accounting.
+Separating the two avoids using an optimistic estimate to admit unsafe
+placements while also avoiding systematic over-accounting of prospective
+demand.
+Under sustained completion pressure, RAVEL may instead use a held-out,
+request-visible expected-output profile when constructing completion quotes;
+Section~\ref{sec:design:policy} describes this adaptation.
+Neither future arrivals nor the evaluated request's realized output length is
+visible to the Router.
+
+Appendix~\ref{sec:appendix:quotes} gives the complete quote equations,
+service-profile calibration procedure, runtime source of every quote term,
+output-demand fallbacks, and the exact construction of
+$\widehat{T}^{\mathrm{obj}}_{i,r}$ and $\mathbf{z}_{i,r}$.
+```
+
+
+
+\subsection{Immediate and Transferable Demand Accounting}
+\label{sec:design:accounting}
+
+Revisability is safe only if tentative demand remains visible exactly once.
+RAVEL therefore associates every Router-owned request with one tentative
+replica queue and one set of replica-dependent prospective charges.
+This makes the request visible immediately without making its placement
+final.
+
+When request $i$ receives a virtual placement at replica $r$, it enters
+$r$'s Router-owned queue.
+Its prompt contributes to the queue-ahead Prefill work observed by later
+quotes, including quotes constructed later in the same planning pass.
+The planner additionally maintains lightweight signals for profiled
+completion-service pressure and LATENCY/TBT pressure.
+These prospective signals complement rather than replace live engine pending
+and running state.
+
+If request $i$ moves from replica $r$ to $r'$, RAVEL transfers its queue
+ownership and recomputes all replica-dependent charges for the new target.
+For a virtual ledger $Z$ with request-specific charge $z_{i,r}$, the transfer
+is conceptually
+\begin{equation}
+    Z_r \leftarrow Z_r-z_{i,r},
+    \qquad
+    Z_{r'} \leftarrow Z_{r'}+z_{i,r'}.
+    \label{eq:ravel-account-transfer}
+\end{equation}
+The source removal and destination addition occur atomically on the
+serialized control path.
+A planning snapshot therefore never observes the request at both replicas or
+at neither replica.
+The request joins the destination's normal planning order rather than
+retaining its previous physical queue position.
+
+Successful handoff ends Router queue ownership but does not erase the
+request's effect on later decisions.
+Its active-service charge remains until terminal completion, while
+replica-reported pending and running state continues to inform subsequent
+quotes.
+Request identifiers are logically deduplicated wherever live and prospective
+state refer to the same request.
+Rejected handoff restores Router ownership and its prospective state; terminal
+completion releases the tracked charge and may trigger another planning pass.
+
+Together, queue ownership and prospective accounting establish RAVEL's central
+accounting invariant:
+\emph{tentative work is immediately visible, but visibility does not make its
+placement final}.
+Appendix~\ref{sec:appendix:accounting} specifies the exact charges, lifecycle
+operations, atomicity rules, and stale-callback protection.
+
+
+\subsection{Bounded Observation and Replanning}
+\label{sec:design:replanning}
+
+RAVEL replans only when newly observed information may change an uncommitted
+assignment, and it bounds both the movable set and the observation delay.
+A trigger starts a planning pass, eligibility determines which requests may
+move, and neither event changes the commitment boundary.
+
+Only Router-owned requests are eligible for reassignment.
+Committed engine-owned work remains fixed but continues to affect later
+quotes.
+RAVEL also excludes requests with no alternative SLO-feasible target.
+Planning is event-driven rather than continuous: arrivals, mobility-hold
+expiration, relevant engine feedback, request termination, and rejected
+handoff may request a pass.
+Multiple requests for replanning are serialized and may be coalesced.
+
+\paragraph{Slack-bounded mobility hold.}
+For selected non-LATENCY requests, RAVEL preserves a short observation window
+before dispatch.
+The request is already virtually placed and accounted; the hold only keeps it
+Router-owned long enough for nearby arrivals to expose whether its tentative
+capacity assignment should change.
+
+Let
+$\sigma_i^{\mathrm{arr}}=
+\max\{0,\Delta_i-\min_r\widehat{T}^{\mathrm{obj}}_{i,r}(a_i)\}$
+denote arrival-time planning slack, where $\Delta_i$ is the applicable TTFT or
+completion planning budget.
+For a hold-eligible request,
+\begin{equation}
+    h_i
+    =
+    \begin{cases}
+        \min\!\left\{
+            \rho_i^{\min},
+            \sigma_i^{\mathrm{arr}}
+        \right\},
+        & \text{if $i$ is hold-eligible},\\
+        0,
+        & \text{otherwise},
+    \end{cases}
+    \label{eq:ravel-mobility-hold}
+\end{equation}
+where $\rho_i^{\min}$ is the minimum positive RTT to a remote serving cluster.
+Eligibility requires a causally detected RTT-scale burst, at least two
+SLO-feasible regions, and a non-LATENCY request.
+LATENCY requests always use $h_i=0$.
+The RTT bound limits deliberate observation to a network timescale, while the
+slack bound prevents the hold from intentionally exceeding the request's
+predicted planning slack.
+
+Hold expiration is not commitment.
+It makes a request dispatch-eligible, but the request remains revisable until
+successful handoff.
+This distinguishes RAVEL from fixed-delay late binding: held requests are
+already placed and accounted throughout the observation interval.
+
+\paragraph{Bounded cohort.}
+Each planning pass orders movable requests by
+\begin{equation}
+    \kappa_i
+    =
+    (a_i+\Delta_i,\;a_i,\;id_i)
+    \label{eq:ravel-planning-order}
+\end{equation}
+and ordinarily considers a prefix of at most $K$ candidates.
+Requests outside the cohort retain their tentative owners and enter the
+planning snapshot as fixed context.
+Within the cohort, every selected placement immediately updates pass-local
+prospective state before the next candidate is evaluated.
+
+Under completion pressure, the effective bound expands from $K$ to the
+deployment's finite aggregate sequence capacity.
+With $R=|\mathcal{R}|$ candidate replicas and effective cohort bound
+$K_{\mathrm{eff}}$, one greedy pass performs
+$O(K_{\mathrm{eff}}R)$ request--replica quote comparisons.
+Completion pressure changes the amount of Router-owned state reconsidered,
+not the placement algorithm or ownership boundary.
+
+Algorithm~\ref{alg:ravel-control} summarizes the transitions that must
+preserve RAVEL's invariants: immediate arrival-time accounting, bounded
+reassignment, and failure-safe handoff.
+
+\begin{algorithm}[!t]
+\caption{\textsc{RAVEL} Router Control Loop}
+\label{alg:ravel-control}
+\small
+
+\Fn{\textnormal{\textsc{OnArrival}}($i$)}{
+    $Q_i \gets \textsc{QuoteReplicas}(i)$\;
+    $r_i \gets \textsc{InitialVirtualPlacement}(i,Q_i)$\;
+    \textsc{AssignAndAccount}($i,r_i$)\;
+    \tcp{Demand becomes visible immediately}
+
+    $h_i \gets \textsc{MobilityHold}(i,Q_i)$\;
+    \If{$h_i=0$ \textbf{or} \textsc{CompletionPressure}()}{
+        \textsc{RequestReplan}()\;
+    }
+    \Else{
+        \textsc{ArmReplan}($h_i$)\;
+    }
+}
+
+\BlankLine
+
+\Fn{\textnormal{\textsc{Replan}}()}{
+    $C \gets \textsc{BoundedMovableCohort}()$\;
+    \tcp{Only Router-owned work is revisable}
+    $X \gets \textsc{SLOAwareGreedyPlace}(C)$\;
+    \For{$i\in C$}{
+        \textsc{TransferOrRefresh}($i,X_i$)\;
+    }
+}
+
+\BlankLine
+
+\Fn{\textnormal{\textsc{Dispatch}}($i$)}{
+    \If{\textsc{Held}($i$) \textbf{or} \textsc{FrontierBlocks}($i$)}{
+        \Return\;
+    }
+
+    $r \gets \textsc{CurrentTentativeOwner}(i)$\;
+    \textsc{RemoveFromRouterQueue}($i$)\;
+    $s \gets \textsc{AttemptHandoff}(i,r)$\;
+
+    \If{$s=\textsc{Rejected}$}{
+        \textsc{RestoreRouterOwnership}($i,r$)\;
+    }
+    \ElseIf{$s=\textsc{Committed}$}{
+        \textsc{FinalizePlacement}($i,r$)\;
+        \tcp{Successful handoff makes placement final}
+    }
+    \Else{
+        \textsc{SurfaceFailureAfterCleanup}($i$)\;
+    }
+}
+\end{algorithm}
+
+Appendix~\ref{sec:appendix:replanning} gives the exact trigger predicates,
+eligibility filters, hold predicate, reassignment limits, full planning
+pseudocode, and configured complexity bounds.
+
+
+\subsection{Unified SLO-Aware Placement and Reversible Dispatch}
+\label{sec:design:policy}
+
+Replica quotes identify which targets remain SLO-feasible; the placement
+policy determines how scarce feasible capacity is allocated among them.
+RAVEL uses one deterministic lexicographic policy for both initial placement
+and bounded cohort replanning.
+Request classes affect the feasibility and objective fields exposed by a
+quote, but do not change the placement algorithm that consumes it.
+
+\paragraph{Initial and cohort placement.}
+On arrival, RAVEL constructs a quote for every candidate replica.
+If at least one replica is predicted feasible, RAVEL selects among feasible
+targets using capacity-pressure, efficiency, and stability signals.
+If no replica is predicted feasible, it first minimizes normalized predicted
+SLO violation and only then considers lower-priority efficiency signals.
+Unlike cache-aware routers that jointly optimize reusable KV state and load
+~\cite{preble,dualmap}, RAVEL treats prefix locality as a late tie-breaker:
+cache affinity cannot override request-level SLO feasibility.
+
+Replanning applies the same placement policy to a bounded movable cohort.
+Requests are processed in the order defined by
+Equation~\ref{eq:ravel-planning-order}.
+Each request is evaluated against the fixed system context together with the
+tentative assignments already selected earlier in the current pass.
+After selecting a target, RAVEL immediately updates the pass-local
+prospective state before evaluating the next request.
+Later requests therefore observe the demand induced by earlier tentative
+choices rather than reasoning from a stale pre-pass snapshot.
+
+The placement key has three lexicographic tiers.
+First, \emph{SLO safety} prioritizes predicted feasibility and, when no target
+is feasible, minimizes normalized predicted violation.
+Second, \emph{capacity pressure} considers prospective sequence-capacity
+headroom, profiled completion-service pressure, and LATENCY/TBT pressure so
+that broadly substitutable work does not unnecessarily consume scarce
+SLO-feasible capacity.
+Third, \emph{efficiency and stability} consider the request-specific predicted
+objective, marginal service cost, placement movement, prefix locality, and
+deterministic replica identity.
+Because these tiers are lexicographically ordered, a lower-priority load,
+locality, or stability benefit cannot compensate for an avoidable SLO miss.
+Appendix~\ref{sec:appendix:placement-key} gives the exact implementation key,
+normalization rules, and tie-breaking direction.
+
+\paragraph{Completion-pressure adaptation.}
+Completion pressure changes the amount of Router-owned work reconsidered and
+the completion-demand estimate supplied to the common planner; it does not
+introduce a second placement or dispatch policy.
+Using only causally observed arrivals and serving state, RAVEL detects
+sustained workflow-completion pressure and expands the movable cohort from
+the ordinary bound $K$ to the deployment's finite aggregate sequence
+capacity.
+When a held-out semantic profile indexed only by request-visible workflow
+metadata is available, RAVEL may also replace the ordinary conservative
+output-demand estimate with the profile's expected-output estimate when
+constructing completion quotes.
+These adaptations change planner inputs and the amount of reconsidered state,
+not the placement algorithm itself.
+Neither exposes future arrivals or the evaluated request's realized
+generation length, and all requests continue through the same planner and
+reversible dispatch path.
+Appendix~\ref{sec:appendix:completion-pressure} gives the exact pressure
+predicate, entry and exit conditions, cohort expansion, and profile
+fallbacks.
+
+\paragraph{Shallow reversible dispatch frontier.}
+Placement revisability is useful only while work remains under Router
+ownership.
+RAVEL therefore limits how much work may cross from Router-owned state into
+engine-facing state at once.
+The dispatch frontier exposes only enough Prefill work to cover one calibrated
+engine quantum and a bounded control horizon, subject to current engine
+headroom.
+Excess work remains in Router-owned queues, where it continues to contribute
+to prospective accounting and remains eligible for replanning.
+
+The frontier is a capacity-gated dispatch boundary rather than a second
+admission or predicted-miss withholding policy.
+A dispatch-eligible request at the frontier proceeds whenever its tentative
+target has sufficient engine headroom.
+Thus, the frontier bounds the amount of work approaching commitment while
+allowing eligible work to progress whenever capacity is available.
+It preserves Router-level visibility and revisability without creating a
+protected cohort or a separate placement policy.
+Appendix~\ref{sec:appendix:frontier} specifies the exact frontier construction,
+headroom test, wake-up events, and concurrent-handoff bound.
+
+\paragraph{Engine-local TBT protection.}
+Replica-level feasibility is meaningful only if local execution preserves the
+service assumptions used to construct the corresponding quote.
+Prior phase-aware serving systems mitigate Prefill--Decode interference
+through chunking, disaggregation, or related execution controls
+~\cite{sarathi,distserve,splitwise,shuffleinfer}.
+RAVEL uses a narrower engine-local mechanism to preserve its predicted TBT
+conditions rather than introducing another geographic scheduling decision.
+
+When Chunked Prefill is enabled and LATENCY Decode is active, RAVEL exports
+the tightest applicable TBT requirement together with deadline metadata to the
+local serving adapter.
+The adapter combines this requirement with a conservative calibrated Prefill
+envelope to bound the next Prefill quantum.
+LATENCY requests receive deadline/TBT-aware local priority, whereas
+non-LATENCY work retains stable FCFS behavior.
+
+These controls enforce the execution assumptions underlying replica quotes;
+they do not alter geographic placement or create a second Router-level
+scheduler.
+The Router remains solely responsible for regional placement and pre-handoff
+reassignment.
+Appendix~\ref{sec:appendix:tbt-control} gives the conditional activation rule,
+chunk-bound equation, priority encoding, and scheduler wrapper.
+
+\subsection{Commitment and Engine Handoff}
+\label{sec:design:commitment}
+
+Commitment is an ownership transition rather than a timer or queue event.
+Only successful engine handoff transfers a request from Router-owned,
+revisable state to engine-owned, final state.
+Tentative placement, mobility-hold expiration, dispatch eligibility, and
+temporary removal from a Router queue are all non-commitment events.
+
+For a dispatch-eligible request, RAVEL reads its current tentative owner,
+removes it from that owner's Router queue, and asks the target replica to
+register the request.
+Registration alone does not commit placement.
+If the target rejects registration, RAVEL restores Router ownership and
+prospective state at the tentative replica, after which the request again
+follows the ordinary dispatch and replanning rules.
+
+After registration succeeds, RAVEL creates and tracks the corresponding
+engine-facing posting task.
+Successful registration together with successful posting-task creation
+constitutes \emph{successful handoff}.
+Only then does the virtual placement become final.
+If posting-task creation fails before this boundary, RAVEL aborts the partial
+registration, cleans attempt-specific state, and surfaces the failure without
+reporting a committed placement.
+
+Failures after successful handoff belong to the committed attempt.
+RAVEL performs terminal abort and cleanup and refreshes its planning state, but
+does not reinterpret a post-handoff failure as another placement opportunity.
+Attempt identifiers prevent delayed callbacks from an earlier attempt from
+modifying ownership or accounting associated with a newer attempt.
+
+Committed work remains visible to later planning.
+Replica pending and running state contributes to later quotes, and its tracked
+active-service charge persists until terminal completion.
+Releasing that charge may request another planning pass so that newly
+available capacity can affect requests that remain Router-owned.
+
+RAVEL therefore separates three lifecycle events:
+\emph{arrival makes demand visible; Router ownership keeps placement
+revisable; successful engine handoff makes placement final}.
+Appendix~\ref{sec:appendix:handoff} gives the complete ownership state machine,
+failure transitions, cleanup rules, and attempt-identifier semantics.
+
+
+

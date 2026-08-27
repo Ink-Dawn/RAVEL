@@ -1,0 +1,823 @@
+\clearpage
+
+% --------------------------------------------------------------------------
+% Draft-only helper.
+% Delete \AppendixPlan and replace each scaffold with final prose before
+% submission.
+% --------------------------------------------------------------------------
+\newcommand{\AppendixPlan}[3]{%
+\paragraph{Question addressed.}
+#1
+
+\paragraph{Content to include.}
+#2
+
+\paragraph{Required evidence.}
+#3
+}
+
+
+% ==========================================================================
+% Appendix A
+% ==========================================================================
+\section{Detailed Design and Operational Semantics}
+\label{app:design-details}
+
+
+
+% --------------------------------------------------------------------------
+\subsection{Common Request State and Notation}
+\label{sec:appendix:state-model}
+
+RAVEL separates \emph{placement ownership} from engine execution state.
+Before successful engine handoff, a request is Router-owned: it has one
+tentative replica, contributes prospective demand to that replica, and may be
+replanned subject to the mobility rules below.  Successful engine handoff
+transfers ownership to the serving engine and makes the geographic placement
+final.  Engine-side execution may subsequently move through Prefill, Decode,
+completion, or failure states, but these events do not reopen geographic
+placement.
+
+For request $i$, we use the following notation:
+$a_i$ is its Router arrival time; $o_i$ is its client region;
+$r_i(t)$ is its tentative replica while Router-owned; $v_i$ is the current
+ownership/version counter used by versioned transfers; and $h_i$ identifies the
+current engine attempt.  Attempt identifiers isolate asynchronous completion,
+cancellation, and cleanup events across retries.
+
+The transport path distinguishes three internal states:
+\texttt{WAITING\_MOVABLE}, \texttt{COMMITTING}, and
+\texttt{PREFILL\_LOCKED}.  A dispatch claim moves a request from
+\texttt{WAITING\_MOVABLE} to the transient \texttt{COMMITTING} state; this is
+not a second placement decision.  If target registration fails, Router
+ownership is restored.  Placement becomes final only after the target accepts
+the request and the engine-facing posting task is created and tracked
+successfully.  RAVEL does not perform ordinary geographic rebinds after this
+successful handoff.
+
+Across these states, RAVEL enforces five invariants.
+
+\begin{enumerate}
+    \item \textbf{Single ownership.} Every nonterminal request has exactly one
+          control-plane or engine owner.
+    \item \textbf{Single tentative placement.} Every Router-owned request is
+          attributed to exactly one tentative replica at a time.
+    \item \textbf{Exactly-once accounting.} A transferable prospective charge
+          is removed from its old owner before being installed at its new
+          owner; a request identifier is logically deduplicated when Router,
+          pending, and running sets overlap.
+    \item \textbf{Attempt isolation.} A callback from attempt $h$ cannot clean
+          state belonging to a newer attempt $h'>h$.
+    \item \textbf{No post-commit rebind.} Ordinary RAVEL replanning applies
+          only before successful handoff; post-handoff imbalance is left to
+          the engine or to a separate migration mechanism.
+\end{enumerate}
+
+
+% --------------------------------------------------------------------------
+\subsection{Replica SLO Quote Construction}
+\label{sec:appendix:quotes}
+
+A placement decision consumes a causal quote
+\begin{equation}
+    Q_{i,r}(t)
+    =
+    \left(
+        \Phi_{i,r}(t),
+        \widehat{T}^{\mathrm{obj}}_{i,r}(t),
+        \mathbf{z}_{i,r}(t)
+    \right),
+    \label{eq:appendix:quote-tuple}
+\end{equation}
+where $\Phi_{i,r}$ is predicted SLO feasibility,
+$\widehat{T}^{\mathrm{obj}}_{i,r}$ is the class-specific ordering objective,
+and $\mathbf{z}_{i,r}$ contains secondary capacity-pressure and stability
+signals.  Quotes are predictions constructed only from information available
+at decision time; they are not formal SLO guarantees.  Their inputs come
+from request-visible SLO metadata, directed WAN measurements, calibrated
+per-cluster service profiles, currently observed engine state, Router-owned
+queue state, and tentative assignments already selected in the same planning
+pass.  Shadow prefix locality is used only as a late tie-breaker, and the
+evaluated request's realized output length is never used by its quote.
+
+\paragraph{Calibrated service curves.}
+For cluster $c$ and active Decode concurrency $n$, the schema-v2 service
+profile stores an affine Prefill model
+\begin{equation}
+    P_{c,n}(p)=b_{c,n}+a_{c,n}p
+    \label{eq:appendix:prefill-profile}
+\end{equation}
+and a measured post-first-token Decode time per token $d_c(n)$.
+Profiles are calibrated independently for each serving class and contain an
+engine fingerprint.  At runtime RAVEL linearly interpolates between measured
+concurrency points and clamps values outside the calibrated concurrency range
+to the nearest endpoint rather than extrapolating without bound.  Because
+$P_{c,n}$ is measured while $n$ Decode sequences are active, RAVEL does not
+add a separate ad-hoc Decode-interference tax to the Prefill estimate.
+
+\paragraph{Queue-ahead Prefill expansion.}
+Let $p_i$ be the full prompt-token charge of request $i$.  Without
+engine-certified cached-token residency, the Router's shadow prefix estimate
+is used only as a locality tie-breaker and does not reduce $p_i$.
+For candidate replica $r$, let
+$E_r$ denote observed engine-pending Prefill tokens,
+$B_{i,r}$ the prompt tokens in Router-owned requests ordered no later than $i$,
+$N^{\mathrm{eng}}_r$ the number of engine-pending requests, and
+$N^{\mathrm{q}}_{i,r}$ the corresponding number of Router-owned
+queue-ahead requests.  With $n_r$ currently running Decode sequences,
+RAVEL estimates
+\begin{equation}
+    \widehat{S}^{\mathrm{pre}}_{i,r}
+    =
+    a_{c(r),n_r}
+    \left(E_r+B_{i,r}+p_i\right)
+    +
+    b_{c(r),n_r}
+    \left(N^{\mathrm{eng}}_r+N^{\mathrm{q}}_{i,r}+1\right).
+    \label{eq:appendix:prefill-service}
+\end{equation}
+During cohort replanning, $B_{i,r}$ and $N^{\mathrm{q}}_{i,r}$ additionally
+include tentative assignments chosen earlier in the same planning pass.
+Thus a later candidate observes the prospective work induced by earlier
+choices rather than a stale snapshot.
+
+The point TTFT estimate is
+\begin{equation}
+    \widehat{\mathrm{TTFT}}^{\mathrm{point}}_{i,r}(t)
+    =
+    (t-a_i)
+    +
+    \rho_{o_i,c(r)}
+    +
+    \widehat{S}^{\mathrm{pre}}_{i,r},
+    \label{eq:appendix:ttft-point}
+\end{equation}
+where $\rho_{o_i,c(r)}$ is the directed client-to-cluster WAN delay.
+The elapsed term explicitly charges Router observation time against the
+request's remaining SLO budget.
+
+\paragraph{Prospective Decode occupancy.}
+Let $\mathcal{O}_r$ be the union of request identifiers visible in the
+Router-owned queue, engine-pending set, and engine-running set for replica
+$r$.  RAVEL forms a prospective sequence count
+\begin{equation}
+    m_{i,r}
+    =
+    \max\!\left(
+        1,\;
+        \left|\mathcal{O}_r\cup\{i\}\right|,\;
+        N^{\mathrm{q}}_r+N^{\mathrm{eng}}_r+N^{\mathrm{run}}_r
+        +\mathbf{1}[i\notin\mathcal{O}_r]
+    \right),
+    \label{eq:appendix:prospective-seqs}
+\end{equation}
+and queries the calibrated Decode curve at $m_{i,r}$, with profile-level
+clamping at the measured endpoint.  The set term prevents the same request
+from being charged twice when lifecycle views overlap.
+
+\paragraph{LATENCY feasibility.}
+For a LATENCY request with TTFT and TBT limits
+$D_i^{\mathrm{TTFT}}$ and $D_i^{\mathrm{TBT}}$,
+\begin{equation}
+    \Phi^{\mathrm{lat}}_{i,r}(t)
+    =
+    \mathbf{1}\!\left[
+       \widehat{\mathrm{TTFT}}_{i,r}(t)
+       \le D_i^{\mathrm{TTFT}}
+       \;\land\;
+       d_{c(r)}(m_{i,r})
+       \le D_i^{\mathrm{TBT}}
+    \right].
+    \label{eq:appendix:latency-feasible}
+\end{equation}
+The two constraints are not combined into a weighted score: a low TTFT cannot
+compensate for a predicted TBT violation.
+
+\paragraph{Completion feasibility and output-demand fallback.}
+For completion-oriented requests, RAVEL distinguishes request-visible expected
+output demand $L_i^{\mathrm{exp}}$ from conservative risk demand
+$L_i^{\mathrm{risk}}$:
+\begin{align}
+    \widehat{T}^{\mathrm{point}}_{i,r}
+    &=
+    \widehat{\mathrm{TTFT}}^{\mathrm{point}}_{i,r}
+    +
+    \max(0,L_i^{\mathrm{exp}}-1)d_{c(r)}(m_{i,r}),
+    \label{eq:appendix:completion-point}\\
+    \widehat{T}^{\mathrm{risk}}_{i,r}
+    &=
+    \widehat{\mathrm{TTFT}}^{\mathrm{point}}_{i,r}
+    +
+    \max(0,L_i^{\mathrm{risk}}-1)d_{c(r)}(m_{i,r}).
+    \label{eq:appendix:completion-risk}
+\end{align}
+Ordinary completion feasibility uses
+\begin{equation}
+    \Phi^{\mathrm{comp}}_{i,r}(t)
+    =
+    \mathbf{1}\!\left[
+        \widehat{T}^{\mathrm{risk}}_{i,r}(t)
+        \le D_i^{\mathrm{comp}}
+    \right],
+    \label{eq:appendix:completion-feasible}
+\end{equation}
+while the expected estimate is used to represent shared service pressure.
+For multi-stage COLLECTIVE requests, we use a held-out semantic profile
+indexed by $(\textit{stage\_id},\textit{stage\_num})$.  Missing contexts fall
+back first to a stage-level aggregate and then to the declared routing hint.
+The profile is constructed from training data only; the evaluated request's
+realized generation length is never an input to its placement quote.
+
+\paragraph{Residual diagnostics.}
+RAVEL records type-specific objective residuals in a bounded history.
+For $n$ available residuals and risk level $\epsilon$, the empirical
+finite-sample rank is
+\begin{equation}
+    k
+    =
+    \left\lceil (n+1)(1-\epsilon) \right\rceil .
+    \label{eq:appendix:residual-rank}
+\end{equation}
+If $k>n$, the quote is marked uncalibrated.  In our evaluation, residuals
+are recorded for diagnostics but do not alter placement decisions.  The
+reported results therefore do not rely on a cold-start residual guarantee.
+
+The quote procedure is:
+
+\begin{quote}
+\textsc{QuoteReplica}$(i,r,t)$:
+(1) read calibrated service curves and currently observed engine state;
+(2) charge full prompt work and EDF-ordered Router work ahead of $i$;
+(3) add tentative work already selected earlier in the current pass;
+(4) compute Eq.~\ref{eq:appendix:ttft-point};
+(5) form the request-ID-deduplicated prospective Decode count in
+Eq.~\ref{eq:appendix:prospective-seqs};
+(6) evaluate the LATENCY or completion feasibility predicate;
+and (7) return feasibility, the class-specific objective, and secondary
+pressure/locality signals.
+\end{quote}
+
+
+% --------------------------------------------------------------------------
+\subsection{Prospective Accounting Lifecycle}
+\label{sec:appendix:accounting}
+
+RAVEL uses prospective state for two related purposes: to make newly arrived
+work visible before commitment and to prevent a planning pass from repeatedly
+assigning work against an unchanged snapshot.
+
+\paragraph{Queue and service debt.}
+The queue-ahead terms in Eq.~\ref{eq:appendix:prefill-service} are derived from
+current Router-owned and engine-visible state.  In addition, the WorkYield
+planner maintains virtual admission ledgers that make repeated placement
+decisions account for already admitted work even when engine lifecycle
+feedback has not yet arrived.
+
+For a LATENCY request,
+\begin{equation}
+    u_{i,r}
+    =
+    \frac{d_{c(r)}(1)}
+         {D_i^{\mathrm{TBT}}},
+    \qquad
+    A_r
+    =
+    \sum_{j:\,\mathrm{latency\ owner}(j)=r} u_{j,r}.
+    \label{eq:appendix:latency-ledger}
+\end{equation}
+Both numerator and denominator are seconds, so $u_{i,r}$ is dimensionless and
+represents one-token-period service demand.  This ledger is a placement
+balancing signal rather than a reconstruction of the instantaneous vLLM
+queue.
+
+For all requests for which service accounting is active, define
+\begin{equation}
+    s^{\mathrm{own}}_{i,r}
+    =
+    \widehat{S}^{\mathrm{own,pre}}_{i,r}
+    +
+    \widehat{S}^{\mathrm{own,dec}}_{i,r},
+    \qquad
+    L_r
+    =
+    \sum_{j:\,\mathrm{service\ owner}(j)=r}
+       s^{\mathrm{own}}_{j,r}.
+    \label{eq:appendix:service-ledger}
+\end{equation}
+The Prefill component contains only the request's own profiled service
+(including the profile intercept), not queue-ahead debt; the Decode component
+is the request-visible expected service used by the corresponding quote.
+Thus $L_r$ is measured in seconds of profiled service.
+
+\paragraph{Exactly-once registration and transfer.}
+Each persistent virtual charge is accompanied by an owner field on the
+request.  Registration is idempotent: if the owner field already exists, the
+same request is not added again.  During cohort replanning, RAVEL first removes
+the mobile candidates' old charges from the fixed planning base.  It then
+processes candidates in deadline order; after each tentative target is chosen,
+the request's charge is added to the pass-local target ledger immediately.
+After the cohort is complete, persistent ownership is transferred by
+subtracting the old charge once and adding the newly computed charge once.
+This realizes deferred commitment without deferred accounting.
+
+For completion-oriented accounting, RAVEL explicitly tracks requests carrying a service
+virtual owner and removes their active service charge on the matching terminal
+callback before requesting another scheduling pass.  The LATENCY token-period
+ledger is used as a cumulative placement-balancing signal and is therefore not
+interpreted as an exact count of currently running Decode requests; actual
+Decode feasibility continues to use the request-ID-deduplicated live
+prospective sequence count in Eq.~\ref{eq:appendix:prospective-seqs}.
+
+Operationally, arrival installs the request at one tentative owner; a replan
+transfers that ownership and its prospective charge exactly once; failed
+handoff restores Router ownership; successful handoff makes the placement
+final while keeping pending/running engine state visible; and terminal
+completion or failure releases the matching active service charge.
+
+The accounting transfer sequence is:
+
+\begin{quote}
+\textsc{TransferOrRefresh}$(i,r\!\rightarrow\!r')$:
+(1) verify that $i$ is still Router-owned and that its attempt/version is
+current;
+(2) remove $i$'s old virtual charges from the planning base;
+(3) recompute $Q_{i,r'}$ against fixed and pass-local state;
+(4) if $r'$ is selected, update the pass-local work/count/service ledgers
+immediately;
+(5) atomically replace the request's persistent owner/charge fields; and
+(6) update the recorded tentative quote.
+A failed version/attempt check leaves the current owner unchanged.
+\end{quote}
+
+
+% --------------------------------------------------------------------------
+\subsection{Bounded Observation and Replanning}
+\label{sec:appendix:replanning}
+
+RAVEL replans from causally observed state rather than polling for an
+unbounded future window.  Scheduling operations are serialized by a single
+asynchronous scheduler lock.  New arrivals, hold expiration, terminal
+feedback, explicit control-plane replan requests, and completion-pressure
+changes may request another pass; repeated requests for a pass can be
+coalesced before the next serialized execution.
+
+\paragraph{Slack-bounded observation.}
+The mobility hold is enabled only for selected non-LATENCY requests.
+Let $\delta_i$ be the most recently observed interarrival gap and let
+$\mathcal{D}_i$ contain positive RTTs from $i$'s client region to remote
+clusters.  The burst predicate is
+\begin{equation}
+    \mathrm{Burst}_i
+    =
+    \mathbf{1}\!\left[
+        \mathcal{D}_i \neq \emptyset
+        \land
+        \delta_i \le \max\mathcal{D}_i
+    \right].
+    \label{eq:appendix:burst-predicate}
+\end{equation}
+
+A hold is considered only if the request is predicted feasible in at least two
+clusters.  Let
+\begin{equation}
+    \mathrm{slack}_i
+    =
+    D_i-\min_r \widehat{T}^{\mathrm{obj}}_{i,r}.
+    \label{eq:appendix:arrival-slack}
+\end{equation}
+
+RAVEL uses the smallest positive remote RTT as the
+observation scale and bounds it by available slack:
+\begin{equation}
+\Delta_i =
+\begin{cases}
+\min\!\left(\min \mathcal{D}_i,\mathrm{slack}_i\right),
+&
+\substack{
+\text{if $i$ is non-LATENCY, $\mathrm{Burst}_i=1$,}\\
+\text{and $i$ has at least two feasible clusters$,$}
+}
+\\[2mm]
+0, & \text{otherwise.}
+\end{cases}
+\label{eq:appendix:mobility-hold}
+\end{equation}
+LATENCY requests are not deliberately held.  They may participate in
+pre-handoff reassignment only when a remote SLO-feasible target exists.
+The hold changes dispatch eligibility, not accounting: the request is
+tentatively placed and visible throughout $[a_i,a_i+\Delta_i)$.
+
+\paragraph{Movable cohort.}
+The planner orders movable requests by
+\begin{equation}
+    \kappa_i
+    =
+    \left(
+       a_i+D_i,\;
+       a_i,\;
+       id_i
+    \right),
+    \label{eq:appendix:planning-order}
+\end{equation}
+where $D_i$ denotes the applicable TTFT limit for LATENCY requests and
+completion limit otherwise.  A request is excluded if it is no longer
+Router-owned, has crossed the handoff boundary, or has exhausted the
+one-rebind limit.  The ordinary candidate bound is derived from serving
+sequence capacity and is set to \texttt{max\_num\_seqs}.  Under completion
+pressure,
+Section~\ref{sec:appendix:completion-pressure}, the bound expands to aggregate
+sequence capacity across replicas.
+
+\paragraph{Fixed and pass-local context.}
+A planning pass freezes the noncandidate engine and Router context.  Fixed
+Router requests that precede candidate $i$ under
+Eq.~\ref{eq:appendix:planning-order} contribute their full prompt work and
+request intercept to $i$'s quote.  After a target is selected for one mobile
+candidate, its prompt work, request count, service charge, and applicable TBT
+charge are immediately added to pass-local state before the next candidate is
+evaluated.
+
+\begin{quote}
+\textsc{Replan}:
+(1) collect the bounded movable cohort and sort it by
+Eq.~\ref{eq:appendix:planning-order};
+(2) freeze current noncandidate engine/Router state;
+(3) remove candidates' old transferable charges from the fixed planning base;
+(4) for each candidate in order, quote every legal replica, choose the minimum
+lexicographic placement key, and update pass-local state immediately;
+(5) apply only still-current assignments, respecting attempt/version and
+one-rebind guards; and
+(6) dispatch newly eligible work through the ordinary frontier.
+\end{quote}
+
+Let $N$ be the movable cohort size, $R$ the number of replicas, and $F$ the
+number of fixed Router-owned requests scanned to build queue-ahead prefixes.
+The WorkYield planner has planning cost
+\begin{equation}
+    O(N\log N + F\log F + NR + F),
+    \label{eq:appendix:planner-complexity}
+\end{equation}
+plus constant-size quote interpolation.  This bound is independent of
+generated token count; RAVEL does not send one Router scheduling event per
+generated token.
+
+
+% --------------------------------------------------------------------------
+\subsection{Deterministic Placement Key}
+\label{sec:appendix:placement-key}
+
+RAVEL avoids combining unlike SLO and load quantities in a fitted weighted
+sum.  The WorkYield planner compares candidate replica $r$ for
+request $i$ using a lexicographic key whose conceptual order is
+\begin{equation}
+\small
+\begin{split}
+    K_{i,r} =
+    (&
+      \neg\Phi_{i,r},\;
+      O_{i,r},\;
+      \ell^{\mathrm{obj}}_{i,r},\;
+      \ell^{\mathrm{TTFT}}_{i,r},\\
+     &A_r+u_{i,r},\;
+      L_r+s^{\mathrm{own}}_{i,r},\;
+      \widehat{T}^{\mathrm{obj}}_{i,r}/D_i,\;
+      M_{i,r},\;
+      \mathrm{moved}_{i,r},\;
+      id_r
+    ),
+    \label{eq:appendix:placement-key}
+\end{split}
+\end{equation}
+with lower values preferred.  Terms that are inapplicable to a request class
+are set to their neutral value rather than introducing a class-specific
+placement algorithm.  The ordering is intentional: feasibility and normalized
+SLO violation dominate capacity pressure; capacity pressure dominates
+predicted objective and marginal service; movement, prefix locality, and
+stable replica identity are used only as late tie-breakers.
+
+The normalized lateness terms are
+\begin{align}
+    \ell^{\mathrm{obj}}_{i,r}
+    &=
+    \frac{
+       \max(0,\widehat{T}^{\mathrm{obj}}_{i,r}-D_i)
+    }{\max(D_i,\varepsilon)},
+    \label{eq:appendix:objective-lateness}\\
+    \ell^{\mathrm{TTFT}}_{i,r}
+    &=
+    \frac{
+       \max(0,\widehat{\mathrm{TTFT}}_{i,r}
+                 -D_i^{\mathrm{TTFT}})
+    }{\max(D_i^{\mathrm{TTFT}},\varepsilon)}.
+    \label{eq:appendix:ttft-lateness}
+\end{align}
+$O_{i,r}$ is the pending-capacity overflow cost when that guard is applicable.
+The convex marginal-service term is
+\begin{equation}
+    M_{i,r}
+    =
+    \frac{
+       (W_r+s^{\mathrm{own}}_{i,r})^2-W_r^2
+    }{D_i^2},
+    \label{eq:appendix:marginal-work}
+\end{equation}
+where $W_r$ is the profiled service already represented at $r$ in the current
+planning state.  Equation~\ref{eq:appendix:marginal-work} is the discrete
+increment of a quadratic congestion potential, not a learned weight.
+
+Initial single-request placement uses the same safety ordering.  After
+feasibility, normalized violation, and virtual-load terms tie, it may consult
+current pressure and shadow prefix locality before the stable replica ID.
+Prefix locality never precedes feasibility or normalized SLO violation.
+
+\paragraph{Two-request example.}
+Suppose request 1 is feasible in $A$ and $B$, while request 2 is feasible only
+in $A$.  When request 1 is tentatively assigned during a cohort pass, RAVEL
+immediately adds its prompt/service charge to the selected region's pass-local
+state.  Request 2 is therefore quoted against that tentative assignment.
+If placing request 1 in $A$ makes request 2 infeasible while placing request 1
+in $B$ preserves both requests' feasible assignments, the first component of
+Eq.~\ref{eq:appendix:placement-key} dominates later locality or movement
+preferences.  This is the concrete mechanism by which request-dependent
+regional substitutability affects placement without requiring a fitted
+cross-metric score.
+
+
+% --------------------------------------------------------------------------
+\subsection{Completion-Pressure Adaptation}
+\label{sec:appendix:completion-pressure}
+
+The completion-pressure path is enabled by request-visible workflow semantics,
+not by a dataset name.  A request is considered a workflow-completion request
+when it is COLLECTIVE and has more than one stage.  RAVEL tracks the count,
+first and latest arrival times, and minimum observed completion SLO among such
+arrivals.  It also records whether any nonworkflow traffic has appeared.
+
+Let $C_{\mathrm{seq}}$ be aggregate sequence capacity across replicas and let
+$D_{\min}$ be the minimum completion SLO among the observed workflow arrivals.
+After a minimum number of samples,
+\begin{equation}
+    q_{\mathrm{obs}}
+    =
+    \frac{N_{\mathrm{arr}}-1}
+         {t_{\mathrm{last}}-t_{\mathrm{first}}},
+    \qquad
+    q_{\mathrm{act}}
+    =
+    \frac{C_{\mathrm{seq}}}
+         {\max(1\,\mathrm{s},\,0.5D_{\min})}.
+    \label{eq:appendix:completion-pressure-qps}
+\end{equation}
+Arrival pressure is observed once
+$q_{\mathrm{obs}}\ge q_{\mathrm{act}}$.
+RAVEL requires
+\begin{equation}
+    N_{\mathrm{arr}}
+    \ge
+    \max\!\left(
+       4,\;
+       \min\!\left(16,\left\lfloor
+          \frac{C_{\mathrm{seq,replica}}}{4}
+       \right\rfloor\right)
+    \right)
+    \label{eq:appendix:pressure-min-samples}
+\end{equation}
+before evaluating the rate predicate, where the per-replica quantity is the
+configured per-replica pending/sequence limit.
+Effective completion pressure additionally requires that workflow-completion
+traffic has been observed, no nonworkflow request has been observed, and
+outstanding work is nonzero.  There is no separately tuned numerical
+hysteresis band: the observed-arrival-pressure bit is causal and sticky within
+the run, while the effective pressure path becomes inactive when the
+eligibility conditions no longer hold and the active flag is cleared when
+outstanding work drains to zero.
+
+Completion pressure changes only two planner inputs.
+
+\begin{enumerate}
+    \item The movable-candidate ceiling expands from the ordinary bound $K$ to
+          aggregate sequence capacity across the deployment.
+    \item If the held-out semantic output profile covers the request context,
+          completion quotes use its expected output demand rather than the
+          ordinary conservative upper estimate for the placement-time expected
+          workload.
+\end{enumerate}
+
+Completion pressure does not introduce a second Router-side admission queue
+or withhold requests predicted to miss their SLOs.  All candidates remain in
+the common WorkYield placement path and are dispatched through the CenterYield
+frontier.
+
+\paragraph{Semantic output profile.}
+The held-out schema-v2 semantic profile indexes
+$(\textit{stage\_id},\textit{stage\_num})$.  For covered context $x$ it stores
+the training mean and a finite-sample $q_{0.95}$ value.  Lookup follows
+\begin{equation}
+\begin{aligned}
+x &= (\textit{stage\_id},\textit{stage\_num})
+   \;\rightarrow\;
+   \textit{stage\_id aggregate} \\
+  &\rightarrow\;
+   \text{declared routing hint}.
+\end{aligned}
+\label{eq:appendix:output-profile-fallback}
+\end{equation}
+Neither the current request's realized output length nor future arrivals enter
+this lookup.
+
+When an active completion request terminates, Unified removes its tracked
+service virtual charge, deletes the request's service-owner metadata, and
+requests another serialized scheduling pass.  Consequently, newly available
+completion capacity can influence requests that remain Router-owned.
+
+
+% --------------------------------------------------------------------------
+\subsection{Shallow Reversible Dispatch Frontier}
+\label{sec:appendix:frontier}
+
+The CenterYield frontier limits how much Router-visible prompt work can cross
+toward engine state at once.  Let
+\begin{equation}
+    H
+    =
+    \max_{c\neq c'}
+       \rho_{c,c'}
+    \label{eq:appendix:control-horizon}
+\end{equation}
+be the largest configured directed inter-cluster control RTT, and let
+$B_{\mathrm{iter}}$ be the engine's
+\texttt{max\_num\_batched\_tokens}.  For replica $r$, let
+$a_{c(r),0}$ be the calibrated idle/fastest Prefill seconds per token.
+RAVEL sets the prompt frontier
+\begin{equation}
+    F_r
+    =
+    B_{\mathrm{iter}}
+    +
+    \left\lceil
+       \frac{H}{a_{c(r),0}}
+    \right\rceil .
+    \label{eq:appendix:frontier-depth}
+\end{equation}
+Thus the engine can hold approximately one complete scheduling quantum plus
+the prompt work that the fastest calibrated Prefill path could consume during
+one worst-case control RTT.
+
+At dispatch time, if $E_r$ is currently observed engine-pending prompt work,
+the frontier headroom is
+\begin{equation}
+    G_r
+    =
+    \max(0,F_r-E_r).
+    \label{eq:appendix:frontier-headroom}
+\end{equation}
+The effective dispatch budget is the minimum of $G_r$ and the replica's
+ordinary engine budget.  A Router-owned request may cross the frontier only if
+its full conservative prompt charge fits this budget.  Eligible requests are
+ordered by their applicable absolute SLO deadline, then arrival time and
+request ID.
+
+In our five-replica deployment, the maximum directed RTT is
+$H=37.9$\,ms.  We use $B_{\mathrm{iter}}=16384$ tokens,
+\texttt{max\_num\_seqs}=64, and 16-token blocks.  The second term of
+Eq.~\ref{eq:appendix:frontier-depth} is deployment-specific and is recomputed
+from the calibrated service profile.
+
+The frontier does not withhold predicted misses in a protected queue.
+If an eligible request fits the capacity budget, it is dispatched.  If target
+registration rejects the request, the request is restored to Router-owned
+state and remains visible to the ordinary replan/dispatch path.  Work that
+does not yet fit stays Router-owned, continues to contribute to prospective
+planning, and remains movable until successful handoff.
+
+
+% --------------------------------------------------------------------------
+\subsection{Engine-Local TBT Protection}
+\label{sec:appendix:tbt-control}
+
+RAVEL's engine adapter protects the local execution assumptions used by
+LATENCY quotes.  The adapter is installed only when the target vLLM exposes
+the expected scheduler hooks; it fails fast if
+\texttt{Scheduler.\_get\_priority} or
+\texttt{Scheduler.\_schedule\_chunked\_prefill} is absent rather than silently
+running an unvalidated compatibility path.
+
+Let
+\begin{equation}
+    T
+    =
+    \min_{i\in\mathcal{D}^{\mathrm{lat}}_r}
+       D_i^{\mathrm{TBT}}
+    \label{eq:appendix:tightest-tbt}
+\end{equation}
+be the tightest active TBT among LATENCY Decode requests at replica $r$.
+From the bound profile, the adapter takes
+\begin{equation}
+    a^{\mathrm{guard}}_r = \max_n a_{c(r),n},
+    \qquad
+    b^{\mathrm{guard}}_r = \max_n b_{c(r),n}.
+    \label{eq:appendix:prefill-guard-envelope}
+\end{equation}
+For block size $g$ and ordinary token limit $B_{\max}$, it computes
+\begin{align}
+    q_{\mathrm{raw}}
+      &=
+      \left\lfloor
+         \frac{\max(0,T-b^{\mathrm{guard}}_r)}
+              {a^{\mathrm{guard}}_r}
+      \right\rfloor,
+      \label{eq:appendix:chunk-raw}\\
+    q_{\mathrm{blk}}
+      &=
+      \min\!\left(
+        B_{\max},
+        \max\!\left(
+          g,\;
+          g\left\lfloor\frac{q_{\mathrm{raw}}}{g}\right\rfloor
+        \right)
+      \right).
+      \label{eq:appendix:chunk-aligned}
+\end{align}
+If $n^{\mathrm{dec}}_r$ Decode sequences are active, the temporary
+block-aligned batch budget is
+\begin{equation}
+    B^{\mathrm{guard}}_r
+    =
+    g
+    \left\lceil
+       \frac{n^{\mathrm{dec}}_r+q_{\mathrm{blk}}}{g}
+    \right\rceil .
+    \label{eq:appendix:guard-batch-budget}
+\end{equation}
+The adapter sets
+\begin{equation}
+    B_{\mathrm{iter}}
+    \leftarrow
+    \min(B_{\max},B^{\mathrm{guard}}_r)
+    \label{eq:appendix:temporary-batch-cap}
+\end{equation}
+for that Chunked-Prefill scheduling call only and restores $B_{\max}$ in a
+\texttt{finally} block.
+
+If no active Decode carries a LATENCY TBT obligation, the adapter follows the
+ordinary vLLM scheduling path.  If even one minimum-size block exceeds the
+profiled TBT budget, the adapter must still provide vLLM a legal block and
+therefore cannot claim a TBT guarantee in that physical regime; the Router's
+replica-feasibility test is intended to avoid such placements, and any
+realized violation remains in the evaluation denominator.
+
+Phase-aware priority metadata carries a remaining deadline budget rather than
+a Router monotonic-clock timestamp.  The engine reconstructs a local deadline
+from its own arrival clock, avoiding an implicit cross-host monotonic-clock
+synchronization assumption.  Non-RAVEL priorities occupy a different range,
+so the adapter remains inert for ordinary vLLM work.
+
+% --------------------------------------------------------------------------
+\subsection{Commitment and Engine-Handoff State Machine}
+\label{sec:appendix:handoff}
+
+RAVEL defines commitment as a successful ownership transition, not as a timer
+expiration or queue removal.  The Router may choose a tentative target, hold a
+request, replan it, and mark it dispatch-eligible without making its placement
+final.
+
+The engine-facing handoff path is:
+(1) freeze the latest Router quote for observability;
+(2) ask the target replica to register the request;
+(3) create the asynchronous engine-facing HTTP posting task; and
+(4) install that task in the attempt-indexed task table.
+The quote-freeze callback is diagnostic and occurs before registration; it
+does not itself commit placement.  Successful registration together with
+successful task creation/tracking is the paper-level commitment boundary.
+Before that point, a dispatch claim may either succeed or roll back: target
+registration rejection restores the Router-owned request, and setup failure
+cleans the matching partial attempt.  After successful handoff, completion,
+failure, and cancellation perform attempt-specific cleanup but do not reopen
+geographic placement.  Callbacks whose attempt identifier no longer matches
+the active attempt are ignored.
+
+Task cleanup is attempt-aware: a deletion request carrying attempt $h$ is
+ignored when the stored task belongs to a different attempt.  The same
+attempt identifier is passed through completion/failure callbacks, preventing
+a delayed callback from an earlier posting attempt from releasing state
+belonging to a newer one.
+
+Before successful handoff, RAVEL changes only Router/transport metadata and
+prospective accounting; the serving engine has not yet established the
+engine-managed execution state whose migration would be required after
+execution starts.  RAVEL therefore obtains pre-handoff placement flexibility
+without KV-state migration.  Once handoff succeeds, later pending/running
+engine state remains visible to subsequent quotes, but the committed request
+itself is no longer an ordinary geographic-replanning candidate.
+
+\begin{quote}
+A request remains reassignable while it is Router-owned.
+Its placement becomes final only after the target replica has accepted
+registration and the corresponding engine-facing posting task has been
+created and tracked successfully.
+\end{quote}
+
+
+% ==========================================================================
+% Appendix B
+% ==========================================================================

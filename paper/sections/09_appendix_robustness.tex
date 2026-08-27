@@ -1,0 +1,151 @@
+\section{Repeated-Run Robustness}
+\label{app:repeated-runs}
+
+This appendix reports a five-run paired robustness study at
+$16\times$ load.  The repeated-run statistics are reported separately from
+single-run headline results because they summarize different experimental
+repetitions.
+
+
+% --------------------------------------------------------------------------
+\subsection{Result Context and Comparator Definitions}
+\label{sec:appendix:result-contexts}
+
+For DeepResearch at $16\times$ load, the single-run comparison in the main
+evaluation reports 79.0\% request-level SLO attainment for \textsc{RAVEL} and
+65.6\% for DualMap, a gain of 13.4 percentage points.  The repeated-run study
+uses DualMap as the fixed comparator for all three workloads and all five
+repetitions.
+
+The five-run DeepResearch study yields a mean paired gain of 17.40 percentage
+points over DualMap.  This value is reported separately from the 13.4
+percentage-point single-run result because the two statistics summarize
+different experimental repetitions.
+
+
+% --------------------------------------------------------------------------
+\subsection{Five-Run Experimental Protocol}
+\label{sec:appendix:repeated-run-protocol}
+
+For each workload
+$w\in\{\mathrm{LMSYS},\mathrm{Burst},\mathrm{DeepResearch}\}$ at
+$16\times$ load, the robustness experiment consists of five complete paired
+replays.  Within paired repetition $j$, RAVEL and the workload's fixed
+comparator use the same request set and order, trace timing, random seed,
+serving endpoints, physical-WAN topology, model/engine configuration, cache
+reset procedure, and warm-up protocol.
+
+For workload $w$ and paired run $j$, define the SLO-attainment gain
+\begin{equation}
+    \Delta_{w,j}
+    =
+    \mathrm{SLOAttain}_{\textsc{RAVEL},w,j}
+    -
+    \mathrm{SLOAttain}_{\mathrm{DualMap},w,j}.
+    \label{eq:appendix:paired-gain}
+\end{equation}
+The five-run paired mean is
+\begin{equation}
+    \overline{\Delta}_w
+    =
+    \frac{1}{5}
+    \sum_{j=1}^{5}
+    \Delta_{w,j}.
+    \label{eq:appendix:mean-paired-gain}
+\end{equation}
+Let
+\begin{equation}
+    s_{\Delta,w}
+    =
+    \sqrt{
+        \frac{1}{4}
+        \sum_{j=1}^{5}
+        \left(
+            \Delta_{w,j}-\overline{\Delta}_w
+        \right)^2
+    }.
+    \label{eq:appendix:paired-std}
+\end{equation}
+We compute a two-sided 95\% Student-$t$ confidence interval over the five
+paired gains:
+\begin{equation}
+    \overline{\Delta}_w
+    \;\pm\;
+    t_{0.975,4}
+    \frac{s_{\Delta,w}}{\sqrt{5}},
+    \qquad
+    t_{0.975,4}=2.776.
+    \label{eq:appendix:paired-ci}
+\end{equation}
+The pairing is performed at the replay level; we do not construct independent
+confidence intervals for RAVEL and the comparator and subtract them.  The five
+paired gains (in percentage points) are
+LMSYS: $\{3.2,2.4,8.0,0.8,6.0\}$,
+Burst: $\{2.4,7.2,9.2,9.4,9.2\}$, and
+DeepResearch: $\{19.4,18.6,11.8,25.0,12.2\}$.
+
+\begin{table}[t]
+    \centering
+    \small
+    \caption{Mean paired SLO-attainment gains at $16\times$ load across five
+    repetitions.  Intervals are two-sided 95\% Student-$t$ CIs over paired
+    gains.}
+    \label{tab:appendix:five-run-deltas}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Workload} &
+        \textbf{Mean (pp)} &
+        \textbf{95\% CI (pp)} \\
+        \midrule
+        LMSYS        & 4.08  & [0.49, 7.67]   \\
+        Burst        & 7.48  & [3.78, 11.18]  \\
+        DeepResearch & 17.40 & [10.56, 24.24] \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% --------------------------------------------------------------------------
+\subsection{Repeated-Run Figure and Interpretation}
+\label{sec:appendix:repeated-run-figure}
+
+The repeated-run figure plots one point per workload at
+$\overline{\Delta}_w$ with the 95\% Student-$t$ interval from
+Eq.~\ref{eq:appendix:paired-ci} and a vertical reference line at zero.
+Each point summarizes five complete paired replays against DualMap.
+
+A positive point estimate establishes that the mean paired difference is
+positive for those five repetitions.  All three 95\% intervals in
+Table~\ref{tab:appendix:five-run-deltas} lie above zero: LMSYS improves by
+4.08\,pp on average (95\% CI: 0.49--7.67\,pp), Burst by 7.48\,pp
+(3.78--11.18\,pp), and DeepResearch by 17.40\,pp
+(10.56--24.24\,pp).  These intervals quantify replay-level variation across
+the five paired repetitions; they are not formal per-request SLO guarantees.
+
+
+
+% --------------------------------------------------------------------------
+\subsection{Interpretation Boundaries}
+\label{sec:appendix:result-boundaries}
+
+The result discussion observes the following boundaries:
+
+\begin{itemize}
+    \item The 13.4\,pp value is the single-run DeepResearch $16\times$
+          RAVEL--DualMap difference.
+    \item The 17.40\,pp value is the mean RAVEL--DualMap difference
+          across five paired DeepResearch repetitions.
+    \item The two statistics summarize different experimental repetitions and
+          are therefore reported separately.
+    \item Paired confidence intervals quantify replay-level uncertainty for
+          the five-run experiment; they do not convert an empirical result
+          into a formal SLO guarantee.
+\end{itemize}
+
+
+\end{document}
+
+
+
+
+
+
