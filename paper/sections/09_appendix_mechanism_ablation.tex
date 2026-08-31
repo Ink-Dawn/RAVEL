@@ -1,0 +1,127 @@
+\section{Mechanism-Ablation and Rescue Analysis}
+\label{app:mechanism-analysis}
+
+This appendix defines the mechanism variants used in
+Section~\ref{sec:eval:mechanism} and the conservative trace-level criterion
+behind the reported pre-handoff rescue statistic.
+All mechanism results and the rescue decomposition use the same 500-request
+Burst $12\times$ execution; the decomposition is not a separate experimental
+campaign.
+
+
+% --------------------------------------------------------------------------
+\subsection{Mechanism-Ablation Definitions}
+\label{sec:appendix:mechanism-ablations}
+
+The ablations remove one control mechanism at a time while retaining the
+remaining RAVEL lifecycle wherever possible.
+Table~\ref{tab:appendix:mechanism-ablations} summarizes the comparison.
+
+\begin{table}[t]
+    \centering
+    \small
+    \caption{Mechanism variants used in the Burst $12\times$ ablation.}
+    \label{tab:appendix:mechanism-ablations}
+    \setlength{\tabcolsep}{3.5pt}
+    \renewcommand{\arraystretch}{1.10}
+    \begin{tabular}{@{}lccc@{}}
+        \toprule
+        \textbf{Variant} &
+        \makecell{\textbf{Prospective}\\\textbf{accounting}} &
+        \makecell{\textbf{Pre-handoff}\\\textbf{reassignment}} &
+        \makecell{\textbf{Local TBT}\\\textbf{protection}} \\
+        \midrule
+        RAVEL          & Yes & Yes & Yes \\
+        NoAccounting   & No  & Yes & Yes \\
+        FixedPlacement & Yes & No  & Yes \\
+        NoTBTGuard     & Yes & Yes & No  \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\paragraph{NoAccounting.}
+This variant retains replica-specific SLO quotes, the pre-handoff replanning
+path, the ownership/commitment boundary, and engine-local TBT protection, but
+suppresses the normal prospective representation of Router-owned tentative
+assignments in the capacity state consumed by subsequent placement decisions.
+Live engine pending and running state remains visible.
+The variant therefore isolates the value of making uncommitted demand visible
+before handoff.
+
+\paragraph{FixedPlacement.}
+This variant performs RAVEL's initial SLO-aware placement and retains
+prospective accounting, dispatch/handoff semantics, and engine-local TBT
+protection, but disables ordinary pre-handoff reassignment after the initial
+choice.
+It isolates the value of keeping Router-owned placement revisable while holding
+tentative-demand visibility fixed.
+
+\paragraph{NoTBTGuard.}
+This variant retains global quotes, prospective accounting, placement, and
+pre-handoff replanning, but disables the engine-local Prefill control and
+priority behavior used to protect active LATENCY Decode requests.
+It isolates the local mechanism that preserves the TBT assumptions used by
+replica-level feasibility decisions.
+
+
+% --------------------------------------------------------------------------
+\subsection{Confirmed Pre-Handoff Rescue Criterion}
+\label{sec:appendix:rescue-criterion}
+
+The trace diagnostic asks whether a miss under a frozen pre-handoff placement
+can be conservatively attributed to an allocation that the same planning
+episode later repairs.
+We call the affected request the \emph{victim} and an earlier-arrived request
+that vacates the region obtained by the victim in the same plan the
+\emph{blocker}.
+
+A frozen-placement miss is classified as a \emph{confirmed pre-handoff rescue}
+only when all of the following conditions hold:
+\begin{enumerate}
+    \item Under the incumbent allocation frozen at the same pre-handoff planning
+          episode, the victim is predicted infeasible.
+    \item After the cohort reassignment produced by that episode, the victim is
+          predicted feasible.
+    \item The victim subsequently satisfies its realized request-level SLO.
+    \item At least one blocker arrived earlier, occupied the region that the
+          victim obtains, and is moved away from that region by the same plan.
+\end{enumerate}
+The criterion intentionally requires both a decision-level change in predicted
+feasibility and a successful realized outcome; cases that cannot establish all
+four conditions remain unresolved.
+
+\paragraph{Feasible-set reconstruction.}
+The diagnostic must distinguish intrinsic regional infeasibility from
+congestion created by the very Router cohort being analyzed.
+For each relevant pre-handoff snapshot, we therefore retain materialized engine
+load but remove the current Router cohort from prospective placement state.
+We then test the affected request individually against each candidate region
+using the same causal quote machinery.
+This reconstruction yields the diagnostic feasible-region set without treating
+blocker-induced prospective congestion as an intrinsic property of the region.
+No future arrivals or realized output lengths are introduced into the quote.
+
+\paragraph{Interpretation boundary.}
+Under this conservative criterion, at least 41.25\% of misses under frozen
+pre-handoff placement are confirmed redirect-rescuable.
+The remaining at most 58.75\% are \emph{unresolved} by this diagnostic; they
+should not be interpreted as proven capacity shortages or irrecoverable
+failures.
+The statistic decomposes the same Burst $12\times$ mechanism run used for the
+ablation rather than supplying an independent experimental sample.
+It provides trace-level evidence for the mechanism behind the
+FixedPlacement gap, not a counterfactual guarantee that every classified miss
+would be repaired under arbitrary execution.
+
+\paragraph{Trace collection.}
+The diagnostic records the planning episode, incumbent and revised ownership,
+predicted feasibility before and after reassignment, and subsequent realized
+SLO outcome.
+These records are buffered during execution and persisted at the end of the
+run so that instrumentation does not introduce synchronous logging work into
+the scheduling path.
+
+
+% ==========================================================================
+% Appendix C
+% ==========================================================================

@@ -1,79 +1,97 @@
 \section{Implementation}
 \label{sec:implementation}
 
-We implement RAVEL in Python as an asynchronous control layer in front of
-geo-distributed vLLM serving replicas~\cite{vllm}.
-Our implementation targets vLLM~0.8.5.post1 and its frozen V0 scheduler
-contract.
+Our implementation preserves the ownership, accounting, and commitment
+semantics defined in Section~\ref{sec:design} while integrating RAVEL with an
+unmodified vLLM serving stack.
+We implement the Router in Python as an asynchronous control layer in front of
+geo-distributed vLLM replicas, targeting vLLM~0.8.5.post1 and its frozen V0
+scheduler contract.
+
+\paragraph{Serialized Router state.}
+Exactly-once ownership and accounting transfer require serialized Router state
+updates.
 All control-plane operations that modify Router-owned queues, perform
-replanning, or initiate dispatch are serialized by a single
-\texttt{asyncio} scheduler lock.
+replanning, or initiate dispatch execute under a single \texttt{asyncio}
+scheduler lock.
 New arrivals, mobility-hold expirations, engine feedback, and explicit
 replanning requests therefore enter the same serialized scheduling path,
-preventing concurrent passes from racing on tentative ownership or
-prospective accounting.
-Terminal callbacks may asynchronously release tracked service charges, but
-any resulting replanning again enters this serialized path.
+preventing concurrent passes from racing on tentative ownership or prospective
+accounting.
+Terminal callbacks may asynchronously release tracked service charges, but any
+resulting replanning re-enters the same serialized path.
+This serialization ensures that ownership transfer and prospective accounting
+updates are observed atomically by every planning pass.
 
-\paragraph{Serving profiles.}
-RAVEL derives serving estimates from externally calibrated schema-v2 profiles
-rather than hard-coded token rates.
-Each profile carries an engine fingerprint and is bound to one serving cluster;
-formal runs require a valid external profile for every cluster.
+\paragraph{Calibrated service profiles.}
+RAVEL derives replica-specific SLO quotes from deployment-calibrated service
+models rather than hard-coded token rates.
+RAVEL derives serving estimates from externally calibrated schema-v2 profiles,
+each bound to a serving cluster and carrying an engine fingerprint; formal runs
+require a valid profile for every cluster.
 At runtime, RAVEL linearly interpolates Prefill and Decode measurements between
 calibrated concurrency points and clamps queries outside the measured range to
 the nearest endpoint.
-The engine adapter additionally constructs a conservative Prefill envelope
-from the maximum calibrated slope and intercept across concurrency levels.
-For multi-stage completion requests, the Router may also load an offline
-semantic output profile indexed only by request-visible workflow metadata,
-such as $(\textit{stage\_id},\textit{stage\_num})$.
-Neither profile exposes future arrivals or realized output length.
+The engine adapter also constructs a conservative Prefill envelope from the
+maximum calibrated slope and intercept across concurrency levels.
+For multi-stage completion requests, the Router may additionally use an offline
+semantic output profile indexed only by request-visible workflow metadata, such
+as $(\textit{stage\_id},\textit{stage\_num})$.
+These profiles expose neither future arrivals nor realized output lengths, and
+therefore provide deployment-specific inputs to
+Section~\ref{sec:design:feasibility} without violating RAVEL's causal
+information model.
 
-\paragraph{vLLM integration and local TBT control.}
+\paragraph{vLLM integration and local TBT protection.}
+Quote validity requires local execution to preserve the service assumptions
+used by the Router.
 RAVEL integrates with vLLM without modifying its source tree.
 At process startup, a lightweight adapter feature-detects and wraps
 \texttt{Scheduler.\_get\_priority} and
-\texttt{Scheduler.\_schedule\_chunked\_prefill}.
-If either required hook is unavailable, startup fails rather than silently
-disabling RAVEL's local controls.
+\texttt{Scheduler.\_schedule\_chunked\_prefill}; if either required hook is
+unavailable, startup fails rather than silently disabling the corresponding
+local controls.
 For LATENCY requests, the adapter encodes a Router-derived deadline-order key
-together with the applicable TBT requirement in a reserved priority range;
-non-LATENCY requests in the mixed path retain ordinary FCFS priority.
+and the applicable TBT requirement in a reserved priority range, while
+non-LATENCY requests retain ordinary FCFS priority in the mixed path.
 When LATENCY Decode is active, the adapter combines the tightest active TBT
 requirement with the conservative Prefill envelope to derive a block-aligned
 bound on the next Prefill quantum.
 It temporarily reduces \texttt{max\_num\_batched\_tokens} for that
 Chunked-Prefill scheduling iteration and restores the configured value in a
 \texttt{finally} block.
-The bound therefore affects only the current local scheduling decision and
-does not introduce a separate Router-level placement policy.
+The mechanism therefore protects the execution assumptions underlying
+replica-level quotes without introducing another Router-level geographic
+placement policy.
 
-\paragraph{Asynchronous handoff and failure handling.}
-Engine handoff is implemented as an explicit asynchronous ownership
-transition.
-After Router-side admission and budget checks succeed, the target replica
-first registers the request, after which RAVEL creates and tracks the
-corresponding engine-facing posting task.
-Successful replica registration together with successful posting-task
-creation constitutes the handoff defined in
-Section~\ref{sec:design:commitment}; only then does placement become final.
+\paragraph{Failure-safe asynchronous handoff.}
+RAVEL implements deferred commitment as a failure-safe asynchronous ownership
+boundary.
+After Router-side admission and budget checks succeed, the target replica first
+registers the request, after which RAVEL creates and tracks the corresponding
+engine-facing posting task.
+Successful replica registration together with successful posting-task creation
+constitutes the handoff defined in
+Section~\ref{sec:design:commitment}; only then does geographic placement become
+final.
 
-If replica registration is rejected, the request is restored to its
-Router-owned queue together with its prospective state and remains eligible
-for the ordinary mobility and replanning rules.
-Failures while creating or executing an engine-facing posting task are
-surfaced to the control plane rather than silently converted into new
-Router-level placements.
+If registration is rejected, RAVEL restores the request to its Router-owned
+queue together with its prospective state, leaving it eligible for ordinary
+mobility and replanning.
+Failures while creating or executing an engine-facing posting task are surfaced
+to the control plane rather than silently converted into a new geographic
+placement.
 Posting attempts carry attempt identifiers so that delayed callbacks from an
 older attempt cannot modify ownership or accounting associated with a newer
 one.
 
 After successful handoff, replica-reported pending and running state continues
-to inform subsequent Router quotes.
-The corresponding active-service charge remains visible until terminal
-completion.
-At request termination, RAVEL releases that charge and requests another
-serialized scheduling pass so that newly available capacity can affect
-requests that remain Router-owned.
-
+to inform subsequent Router quotes, while the corresponding active-service
+charge remains visible until terminal completion.
+At termination, RAVEL releases that charge and requests another serialized
+scheduling pass so that newly available capacity can affect requests that remain
+Router-owned.
+Thus, the implementation preserves the lifecycle established in
+Section~\ref{sec:design}: Router ownership preserves revisability, successful
+handoff establishes finality, and committed work remains visible through live
+engine state.

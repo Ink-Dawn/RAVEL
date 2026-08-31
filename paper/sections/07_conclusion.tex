@@ -1,31 +1,28 @@
 \section{Conclusion}
 
-Geo-distributed LLM serving must route requests online even though regional
-capacity is request-dependent: a region that is interchangeable for one
-request may be essential for satisfying another request's SLO.
-Later arrivals can reveal this opportunity cost, but waiting for such
-information consumes the same requests' SLO slack.
-RAVEL addresses this tension by separating demand visibility from placement
-commitment.
-It accounts each request immediately at a tentative replica, while keeping
-that placement revisable as long as the request remains Router-owned and
-committing it only at successful engine handoff.
-Across LMSYS, bursty traffic, and multi-stage DeepResearch workloads, RAVEL
-consistently improves request-level SLO attainment while maintaining
-competitive latency, with particularly large gains under several
-high-contention settings.
-More broadly, RAVEL shows that an online serving system need not postpone
-demand accounting to preserve the flexibility to exploit information revealed
-by later arrivals.
+Geo-distributed LLM capacity is request-dependent: a region that is optional
+for one request may be indispensable to another.
+This makes irreversible arrival-time placement vulnerable to avoidable
+allocation-induced SLO misses as later demand changes the opportunity cost of
+regional capacity.
 
+Our diagnosis shows that simply delaying commitment is insufficient.
+At an 80-ms fixed late-binding delay, removing the direct waiting penalty
+recovers only 0.6 percentage points of SLO attainment, whereas making held
+requests immediately visible to prospective capacity accounting recovers
+15.0 points.
+The dominant recoverable loss therefore comes from delaying demand visibility
+together with placement finality.
 
+RAVEL separates these lifecycle decisions.
+Requests enter capacity planning immediately through tentative placement and
+prospective accounting, remain revisable while Router-owned, and become final
+only after successful engine handoff.
+Replica-specific SLO quotes, bounded pre-handoff replanning, and engine-local
+protection make this separation practical.
 
-
-
-
-
-
-
-
-
-
+On our physical-WAN vLLM deployment, RAVEL improves request-level SLO attainment
+across conversational, bursty, and multi-stage workloads while retaining
+millisecond-scale online planning overhead.
+More broadly, preserving online flexibility need not require hiding
+already-arrived work from the state used to make future decisions.

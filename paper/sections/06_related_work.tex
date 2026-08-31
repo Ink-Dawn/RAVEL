@@ -15,14 +15,16 @@ Sarathi-Serve uses Chunked Prefill to reduce Prefill--Decode interference
 against latency objectives~\cite{distserve}, and Splitwise and ShuffleInfer
 similarly separate or coordinate phase execution to reduce interference
 ~\cite{splitwise,shuffleinfer}.
-These systems primarily improve how admitted work executes.
-RAVEL operates at a different control layer: it determines geographic
-placement and preserves bounded placement revisability before engine handoff,
-while relying on the local serving engine to execute admitted requests.
+These systems primarily improve how admitted requests execute within the
+serving engine.
+RAVEL operates one control layer earlier: it keeps geographic placement
+revisable while the request remains Router-owned, and relies on engine-local
+controls only to preserve the service assumptions used by that placement
+decision.
 
 \paragraph{Distributed and cache-aware LLM routing.}
-Distributed serving systems increasingly route requests using runtime load,
-reusable KV state, and adaptive scheduling signals.
+Distributed LLM serving systems increasingly choose destinations using runtime
+load, reusable KV state, and adaptive scheduling signals.
 Preble jointly considers reusable KV state and computation load
 ~\cite{preble}, while DualMap balances cache affinity against load and performs
 hotspot-aware rebalancing~\cite{dualmap}.
@@ -32,43 +34,44 @@ A related body of work improves KV-cache reuse, storage, and transfer through
 cache-centric serving and prefix-aware execution
 ~\cite{mooncake,cachedattention,infinigen,cachecraft,chunkattention,
 cacheblend,kvlink}.
-These techniques improve destination selection or reduce the cost of executing
-a request at a selected destination.
-RAVEL does not introduce a new cache primitive or routing score.
-Instead, it separates destination selection from commitment:
-an arrived request contributes prospective demand to its tentative replica
-immediately, while that replica may still change before successful engine
-handoff.
+These techniques improve destination selection or reduce the cost of serving a
+request at the selected destination.
+RAVEL addresses a different lifecycle decision.
+An arriving request contributes prospective demand to its tentative replica
+immediately, while that destination remains revisable until commitment.
+Thus, RAVEL does not replace load-, cache-, or locality-aware placement signals;
+it changes how long a placement may remain tentative and how tentative work is
+represented to subsequent decisions.
 
 \paragraph{Geo-distributed and network-aware placement.}
-Recent systems explicitly incorporate geographic and network heterogeneity
-into LLM placement.
+Recent systems explicitly incorporate geographic and network heterogeneity into
+LLM placement.
 SkyWalker balances cross-region load while preserving KV-cache locality
 ~\cite{skylb}; GORGO incorporates WAN latency, queueing state, and
 Prefill/cache cost into cross-region decisions~\cite{gorgo}; and Solyx uses
 serving telemetry together with WAN measurements for per-request cross-site
 placement~\cite{solyx}.
-Helix further considers heterogeneous GPU and network resources in LLM serving
+Helix considers heterogeneous GPU and network resources in LLM serving
 ~\cite{helix}, while network-aware ML schedulers such as CASSINI coordinate
 placement with communication conditions~\cite{cassini}.
 More broadly, private-WAN systems such as SWAN and B4 demonstrate the
 importance of heterogeneous inter-datacenter paths and traffic constraints
 ~\cite{swan,b4}.
-These systems sharpen the decision of \emph{where} work should execute.
-RAVEL makes an additional control decision first-class:
+These systems sharpen the decision of \emph{where} work should execute given
+the state visible to the scheduler.
+RAVEL makes a second decision first-class:
 \emph{when should that placement become irreversible?}
-It answers this question by retaining Router-owned tentative placement and
-prospective accounting until the engine-handoff boundary.
+Its answer is to expose arrived demand to planning immediately while preserving
+pre-handoff revisability.
 
 \paragraph{SLO- and application-aware LLM scheduling.}
 Prior systems adapt LLM execution and routing to request-specific latency,
 deadline, or quality objectives.
 JITServe schedules heterogeneous request classes from imprecise request
-information~\cite{jitserve}, QUARTZ targets TTFT SLOs through
-quantile-aware routing and queueing~\cite{quartz}, Andes considers
-quality-of-experience for streamed generation~\cite{andes}, and AdaServe
-customizes speculative decoding to per-request SLO requirements
-~\cite{adaserve}.
+information~\cite{jitserve}, QUARTZ targets TTFT SLOs through quantile-aware
+routing and queueing~\cite{quartz}, Andes considers quality-of-experience for
+streamed generation~\cite{andes}, and AdaServe customizes speculative decoding
+to per-request SLO requirements~\cite{adaserve}.
 Libra combines request partitioning with SLO-aware scheduling under dynamic
 load~\cite{libra}, while complementary work studies serving fairness, SLO
 metrics, and serving-performance characterization
@@ -76,14 +79,14 @@ metrics, and serving-performance characterization
 Application-aware systems exploit structure across related LLM calls:
 Parrot coordinates semantic dependencies across requests~\cite{parrot},
 Agentix schedules agent programs as first-class execution entities
-~\cite{agentix}, and Ayo optimizes end-to-end LLM applications
-~\cite{ayo}.
+~\cite{agentix}, and Ayo optimizes end-to-end LLM applications~\cite{ayo}.
 Agent frameworks and benchmarks further expose increasingly multi-stage and
 dependency-rich workloads~\cite{autogen,gaia,agentbench,webarena}.
-RAVEL applies request-specific SLO semantics at a different control point:
-it uses WAN delay and replica serving state to determine which geographic
-capacity remains feasible before handoff, while its engine-local controls
-preserve the execution assumptions used by those placement decisions.
+RAVEL complements these systems by using request-specific SLO semantics to
+determine which geographic replicas remain feasible at each decision point.
+The distinction is lifecycle-level: those feasibility signals guide tentative
+placement and replanning before handoff, rather than only ranking a single
+irrevocable destination.
 
 \paragraph{Reassignment, migration, and online commitment.}
 Serving systems can preserve flexibility after an initial assignment through
@@ -92,18 +95,22 @@ runtime migration, state movement, preemption, or dynamic orchestration
 Llumnix, for example, dynamically reschedules requests across model instances
 and uses live migration to improve load balancing and isolation
 ~\cite{llumnix}.
-These mechanisms retain placement flexibility after engine-managed execution
-state has materialized.
-More broadly, delay scheduling shows that waiting can expose better placement
-opportunities~\cite{delayscheduling}, while deadline-aware and online
-scheduling systems study finite slack, incomplete information, and scalable
-decision making
-~\cite{liu_layland_edf,sparrow,flow_imprecise,omega,firmament}.
-RAVEL chooses an earlier commitment boundary.
-A request may be reassigned while it remains Router-owned, but its placement
-becomes final after successful engine handoff, before changing placement would
-require moving engine-managed request state.
-Pre-handoff replanning and runtime migration are therefore complementary:
-the former can avoid some state movement, while the latter can correct
-imbalance that emerges after execution begins.
+Such mechanisms retain flexibility after engine-managed execution state has
+materialized.
+RAVEL instead preserves flexibility before that point:
+a request may be reassigned while Router-owned, but successful engine handoff
+makes its geographic placement final.
+Pre-handoff replanning and runtime migration are therefore complementary;
+the former can correct stale allocations before state movement is necessary,
+while the latter can address imbalance that arises after execution begins.
 
+Delay scheduling provides another relevant comparison.
+Waiting-based policies preserve optionality by postponing action
+~\cite{delayscheduling}, while deadline-aware and online schedulers study
+finite slack, incomplete information, and scalable decision making
+~\cite{liu_layland_edf,sparrow,flow_imprecise,omega,firmament}.
+RAVEL differs in what remains visible during that optionality window.
+A Router-owned request may remain uncommitted, but it is already tentatively
+placed and prospectively accounted.
+Thus, preserving placement flexibility does not require withholding
+already-arrived demand from the state used to make subsequent decisions.

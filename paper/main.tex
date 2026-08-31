@@ -1,9 +1,24 @@
 \documentclass[letterpaper,twocolumn,10pt]{article}
 \input{preamble}
 \begin{document}
+%don't want date printed
 \date{}
+
+%make title bold and 14 pt font (Latex default is non-bold, 16 pt)
 \title{\Large \bf RAVEL: Reversible SLO-Aware Virtual Placement for Geo-Distributed LLM Serving}
+
+% \author{
+% {\rm Your N.\ Here}\\
+% Your Institution
+% \and
+% {\rm Second Name}\\
+% Second Institution
+% }
+
 \maketitle
+
+% Use the following at camera-ready time to suppress page numbers.
+% Comment it out when you first submit the paper for review.
 \thispagestyle{empty}
 \input{sections/00_abstract}
 \input{sections/01_introduction}
@@ -20,5 +35,6 @@
 \clearpage
 \appendix
 \input{sections/08_appendix_design}
-\input{sections/09_appendix_robustness}
+\input{sections/09_appendix_mechanism_ablation}
+\input{sections/10_appendix_robustness}
 \end{document}

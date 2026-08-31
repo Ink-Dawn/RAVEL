@@ -8,7 +8,7 @@ all: $(BUILD_DIR)/$(PAPER).pdf
 
 $(BUILD_DIR)/$(PAPER).pdf: main.tex preamble.tex sections/*.tex figures/* sample.bib usenix.sty acm.bst | $(BUILD_DIR)
 	pdflatex $(LATEX_FLAGS) $(PAPER).tex
-	cd $(BUILD_DIR) && bibtex $(PAPER)
+	cd $(BUILD_DIR) && BIBINPUTS=..: BSTINPUTS=..: bibtex $(PAPER)
 	pdflatex $(LATEX_FLAGS) $(PAPER).tex
 	pdflatex $(LATEX_FLAGS) $(PAPER).tex
 

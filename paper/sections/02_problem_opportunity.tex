@@ -1,52 +1,45 @@
 \section{Problem and Design Opportunity}
 \label{sec:problem}
 
-The design opportunity arises from separating three decisions that request
-routing often couples: \emph{placement}, \emph{regional demand accounting},
-and \emph{commitment}.
-A placement associates a request with a candidate serving replica and,
-therefore, with the region containing that replica.
-Regional demand accounting attributes an arrived request's prospective work
-to its tentative replica and region so that the request influences subsequent
-placement decisions.
-Commitment is the boundary after which the routing layer no longer revises
-that placement.
-Using only causally available information, the router seeks to maximize the
-fraction of requests that satisfy all applicable request-level SLOs.
-RAVEL chooses successful handoff to the serving engine as its commitment
-boundary: a request remains reassignable while it is Router-owned and becomes
-final only after handoff.
-This is a deliberate control-plane boundary rather than an inherent
-irreversibility property of LLM execution; it preserves placement flexibility
-without requiring migration of engine-managed KV state.
-
+Geo-distributed request placement is an online allocation problem in which
+demand visibility and placement finality need not occur at the same time.
+For request $i$, let $t_i^{\mathrm{vis}}$ denote the time at which the request
+first contributes to the capacity state used for subsequent placement
+decisions, and let $t_i^{\mathrm{final}}$ denote the time after which the
+routing layer can no longer change its destination.
+A placement associates the request with a candidate serving replica, whereas
+visibility determines when its prospective demand influences later decisions.
+These are logically distinct lifecycle events.
+Because future arrivals are unknown, the router must choose placements and
+their finality using only causally available demand and serving state, with the
+goal of maximizing the fraction of requests that satisfy their applicable
+request-level SLOs.
 
 
 \subsection{Request-Dependent Regional Feasibility}
 \label{sec:problem:feasibility}
 
+SLO feasibility is specific to a request, replica, and decision time.
 Prior SLO-aware serving systems show that whether a request can meet its
-latency objective depends on both request-specific requirements and evolving
-serving conditions~\cite{distserve,jitserve,quartz,andes}.
-RAVEL makes this dependence explicit at the geographic placement layer:
-SLO feasibility is specific to a request, candidate replica, and decision
-time rather than a static property of a region.
+objective depends on request-specific requirements and evolving serving
+conditions~\cite{distserve,jitserve,quartz,andes}.
+At the geographic placement layer, these conditions additionally include the
+WAN path to each candidate region.
 
 Let $c$ denote a serving region, $\mathcal{R}_c$ the replicas in that region,
 and $r\in\mathcal{R}_c$ a candidate replica.
 For request $i$, let $\Phi_{i,r}(t)$ indicate whether replica $r$ is predicted,
 using only information available at time $t$, to satisfy every SLO constraint
 applicable to $i$.
-This prediction depends on the request's SLO semantics and remaining slack,
-its estimated service demand, the WAN path to region $c$, and the currently
-observed serving state at replica $r$.
-Because both serving state and remaining slack evolve over time,
-$\Phi_{i,r}(t)$ is an online feasibility estimate rather than a guarantee:
-future arrivals and prediction error may still change the realized outcome.
-Section~\ref{sec:design:feasibility} describes how RAVEL constructs these
-replica-level predictions.
+The prediction depends on the request's SLO semantics and remaining slack,
+estimated service demand, the WAN path to region $c$, and the observed serving
+state at replica $r$.
+Because these inputs evolve over time, $\Phi_{i,r}(t)$ is an online feasibility
+estimate rather than a static property of a replica or region.
+Section~\ref{sec:design:feasibility} describes the estimator used by RAVEL.
 
-We define the feasible-region set of request $i$ as
+The feasible-region set captures the geographic alternatives available to a
+request at a given decision time:
 \begin{equation}
     \mathcal{F}_i(t)
     =
@@ -58,65 +51,62 @@ We define the feasible-region set of request $i$ as
     \right\}.
     \label{eq:problem:feasible-set}
 \end{equation}
-The time index captures two distinct sources of change.
+The time index captures two sources of change.
 First, new arrivals and accounting updates alter the serving state visible to
-the router, so $\mathcal{F}_i(t)$ may expand or shrink as contention changes.
-Second, even if network and serving conditions remain unchanged, elapsed time
-consumes TTFT or completion slack and can therefore remove regions from the
-feasible set.
+the router, so contention may expand or shrink $\mathcal{F}_i(t)$.
+Second, elapsed time consumes TTFT or completion slack, so
+$\mathcal{F}_i(t)$ may shrink even if serving load and network conditions remain
+unchanged.
 
-The size and composition of $\mathcal{F}_i(t)$ characterize how substitutable
+The size and composition of $\mathcal{F}_i(t)$ determine how substitutable
 regional capacity is for request $i$.
-A request with several feasible regions has multiple serving alternatives,
-whereas a request with a small feasible set depends on comparatively scarce
-regional capacity.
+A request with several feasible regions has alternatives, whereas one with a
+small feasible set depends on comparatively scarce regional capacity.
 For example, if
 $\mathcal{F}_1=\{A,B\}$ and $\mathcal{F}_2=\{A\}$,
-assigning request 1 to region $A$ may consume the only feasible option
-available to request 2, even though request 1 could instead execute in $B$.
-Thus, the opportunity cost of assigning capacity in a region depends on which
-requests can substitute away from that region.
-Regional capacity is therefore request-dependent, and optimizing
-request--region assignments independently need not maximize aggregate
-request-level SLO attainment.
+assigning request 1 to $A$ consumes request 2's only feasible option even though
+request 1 could execute in $B$.
+The opportunity cost of a region therefore depends on which requests can
+substitute away from it.
+An SLO failure can consequently be \emph{allocation-induced} rather than
+necessarily \emph{capacity-induced}: an earlier request may occupy capacity
+that it can replace elsewhere but a later request cannot.
 
 
-\subsection{The Information--Slack Tradeoff}
+\subsection{Coupling Demand Visibility with Commitment}
 \label{sec:problem:tradeoff}
 
-The allocation problem is online: the router must make decisions without
-observing future arrivals.
-A placement that is reasonable under the currently visible state may become
-undesirable after a more region-constrained request arrives.
-This setting shares concerns with low-latency online and shared-state cluster
-scheduling, where decisions must be made from incomplete and continually
-changing information
+Later arrivals can change the opportunity cost of a placement that was
+reasonable when it was made.
+The router cannot know such arrivals in advance, and we do not assume an arrival
+oracle or an offline-optimal allocation.
+This setting shares concerns with online and shared-state cluster scheduling,
+where decisions are made from incomplete and evolving information
 ~\cite{sparrow,flow_imprecise,omega,firmament}.
-RAVEL does not assume an arrival oracle or attempt to reproduce an offline
-optimal allocation; instead, it preserves bounded revisability using only
-causally observed requests and serving state.
+Any practical policy must therefore exploit only requests and serving state
+that have become causally observable.
 
-The relevant operating points differ along two independent axes:
-when arrived demand becomes visible to capacity planning and when placement
-becomes final.
-Table~\ref{tab:problem:operating-points} separates these decisions.
-A one-shot operating point assigns and accounts for a request immediately and
-does not subsequently revise that placement.
-At the other extreme, our diagnostic LateBind-$\tau$ policy keeps a request
-centrally unassigned and unaccounted for a fixed interval $\tau$, then observes
-the current state and makes a single final placement.
-RAVEL occupies the remaining operating point: it makes the request's demand
-visible immediately while retaining placement revisability until engine
-handoff.
+Demand visibility and placement finality are distinct lifecycle decisions.
+Table~\ref{tab:problem:operating-points} illustrates three operating points.
+A one-shot policy makes an arriving request visible immediately but also
+finalizes its placement immediately, leaving no opportunity for later arrivals
+to revise it.
+Our diagnostic LateBind-$\tau$ policy instead holds the request centrally
+unassigned and unaccounted for $\tau$, and then makes one final placement.
+Thus,
+\begin{equation}
+    t_i^{\mathrm{vis}}
+    =
+    t_i^{\mathrm{final}}
+\end{equation}
+under both policies; they differ mainly in when this coupled event occurs.
+The remaining operating point is to expose demand before placement becomes
+irreversible.
 
 \begin{table}[t]
     \centering
     \small
-    \caption{
-    Demand-visibility and placement-finality operating points.
-    One-shot couples both decisions at arrival, LateBind-$\tau$ delays both,
-    and RAVEL exposes demand immediately while deferring only commitment.
-    }
+    \caption{Separating demand visibility from placement finality.}
     \label{tab:problem:operating-points}
 
     \renewcommand{\arraystretch}{1.25}
@@ -131,52 +121,52 @@ handoff.
         \makecell{\textbf{Demand}\\\textbf{visible}} &
         \makecell{\textbf{Placement}\\\textbf{final}} \\
         \midrule
-        One-shot        & At arrival   & At routing        \\
-        LateBind-$\tau$ & After $\tau$ & After $\tau$      \\
-        RAVEL           & At arrival   & At engine handoff \\
+        One-shot                & At arrival   & At arrival   \\
+        LateBind-$\tau$         & After $\tau$ & After $\tau$ \\
+        Desired operating point & At arrival   & Later        \\
         \bottomrule
     \end{tabular*}
 \end{table}
 
-Deferring commitment can reveal information about later demand, but that
-information is not free under request-level SLOs.
-Delay scheduling similarly shows that waiting can expose better placement
-opportunities~\cite{delayscheduling}, while deadline-driven scheduling
-emphasizes the cost of consuming finite execution slack
-~\cite{liu_layland_edf}.
-Tail-sensitive distributed services further motivate treating latency slack
-as a scarce resource rather than an unlimited observation window
-~\cite{tail_at_scale}.
-In geo-distributed LLM serving, these effects interact directly:
-holding request $i$ for $\tau$ consumes $\tau$ of its available TTFT or
-completion slack, leaving less time for WAN transfer, queueing, and inference.
-A longer delay may therefore reveal more subsequent demand while
-simultaneously reducing the set of regions in which the held request can still
-succeed.
-Equivalently, $\mathcal{F}_i(t)$ can shrink purely because the router waits,
-even without an increase in serving load.
+Fixed-delay late binding shows that preserving optionality is useful, but
+delaying commitment also introduces costs.
+Figure~\ref{fig:motivation}(a) shows that short deferral improves SLO attainment
+by exposing additional arrivals, while the gain eventually reverses as
+$\tau$ grows.
+One intuitive cost is direct slack loss: holding request $i$ for $\tau$
+consumes $\tau$ of its remaining TTFT or completion budget and can shrink
+$\mathcal{F}_i(t)$ even when serving load is unchanged.
+Figure~\ref{fig:motivation}(b), however, shows that this direct waiting cost is
+not the dominant recoverable penalty in our diagnostic.
 
-We refer to this tension as the \emph{information--slack tradeoff}.
-Figure~\ref{fig:motivation} illustrates it empirically:
-short fixed deferral can improve SLO attainment by exposing useful arrivals,
-but the benefit saturates and eventually reverses as waiting consumes an
-increasing fraction of request SLO budgets.
-The design opportunity is therefore not simply to delay placement longer.
-It is to make arrived demand visible immediately while deferring only
-placement finality.
+The dominant recoverable loss comes from withholding already-arrived demand
+from subsequent capacity planning.
+At $\tau=80$~ms, eliminating the direct waiting penalty recovers only
+0.6 percentage points of SLO attainment.
+Keeping the same final-binding delay but immediately exposing held requests to
+prospective accounting instead recovers 15.0 percentage points.
+LateBind-$\tau$ therefore changes two lifecycle events simultaneously:
+postponing finality preserves the opportunity to revise placement, but
+postponing visibility causes later requests to plan against incomplete
+prospective demand.
+The desired operating point therefore satisfies
+\begin{equation}
+    t_i^{\mathrm{vis}} < t_i^{\mathrm{final}},
+    \label{eq:problem:visibility-before-finality}
+\end{equation}
+so that arrived work affects capacity planning before its placement becomes
+irreversible.
 
-Exploiting this opportunity requires preserving useful revisability without
-introducing unbounded waiting, inconsistent accounting, or unsafe ownership
-transitions.
+Realizing this operating point safely requires more than simply delaying
+commitment.
 A practical design must
-(i) estimate request-specific SLO feasibility,
-(ii) account each tentative request exactly once and transfer its prospective
-charge when placement changes,
-(iii) bound both deliberate observation and multi-request replanning, and
-(iv) enforce a failure-safe commitment boundary at engine handoff.
-Section~\ref{sec:design} describes how RAVEL satisfies these requirements.
-```
-
-
-
-
+(i) estimate request-specific SLO feasibility so that reassignment considers
+only viable alternatives;
+(ii) make tentative demand visible exactly once and transfer its prospective
+charge when placement changes;
+(iii) exploit newly observed demand without unbounded waiting or global
+replanning; and
+(iv) define a failure-safe commitment boundary after which placement no longer
+moves.
+Section~\ref{sec:design} describes how RAVEL realizes these requirements and
+chooses a concrete commitment boundary.

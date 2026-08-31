@@ -4,137 +4,135 @@
 Geo-distributed LLM serving expands available GPU capacity, but not every
 region is equally useful to every request.
 Large-scale private WANs expose heterogeneous inter-region paths
-~\cite{b4,swan}, while distributed inference systems must additionally
-contend with heterogeneous accelerator, serving, and network conditions
+~\cite{b4,swan}, while distributed inference systems must additionally contend
+with heterogeneous accelerator, serving, and network conditions
 ~\cite{helix,cassini,skylb,gorgo,solyx}.
 Together with heterogeneous request-level SLOs, these differences make
-regional capacity request-dependent: a region that is merely attractive for
-one request may be the only SLO-feasible choice for another.
-A placement therefore determines not only GPU load and cache locality, but
-also the WAN path and remote serving conditions experienced by the request.
-Interactive requests may impose tight time-to-first-token (TTFT) and
-time-between-token (TBT) bounds, whereas longer-running or multi-stage
-requests may instead be governed by end-to-end completion or
-quality-of-experience objectives
+placement feasibility request-specific: a region that is optional for one
+request may be the only SLO-feasible choice for another.
+Requests may impose different TTFT, TBT, or end-to-end completion objectives
 ~\cite{distserve,jitserve,quartz,andes,revisit_slo_goodput}.
-Consequently, allocating regional capacity well requires reasoning about both
-current serving conditions and the SLO-feasible alternatives available to
-each request.
+Regional capacity therefore has request-dependent opportunity cost: assigning
+a region to one request may consume capacity that another request cannot
+substitute away from.
 
-Existing distributed routers improve \emph{where} an arriving request should
-execute using signals such as serving load, cache locality, WAN conditions,
-request-level SLOs, and adaptive routing feedback
+This asymmetry makes an otherwise reasonable placement costly when later demand
+arrives.
+Existing distributed routers increasingly improve \emph{where} an arriving
+request should execute using serving load, cache locality, WAN conditions,
+request-level SLOs, and adaptive feedback
 ~\cite{preble,dualmap,skylb,gorgo,quartz,lodestar}.
-However, these routing abstractions largely couple destination selection with
-commitment: once a request is assigned using the currently visible state,
-later arrivals generally do not influence that placement before execution
-begins.
-This coupling creates an additional online allocation problem.
-A locally attractive placement for the current request can consume
-SLO-feasible capacity that a later, more region-constrained request cannot
-replace.
+However, they largely couple destination selection with commitment: once a
+request is placed using the currently visible state, later arrivals generally
+cannot change that placement before execution begins.
+Consider two regions, $A$ and $B$.
+Request $r_1$ can satisfy its SLO in either region, whereas a later request
+$r_2$ can succeed only in $A$.
+Placing $r_1$ in the currently faster $A$ is locally reasonable, but consumes
+$r_2$'s only feasible region; redirecting $r_1$ to $B$ allows both requests to
+succeed.
+This opportunity also appears in execution traces.
+In a trace-level decomposition of the Burst $12\times$ mechanism run, our
+conservative criterion confirms pre-handoff rescue events for at least
+41.25\% of misses under frozen placement: same-plan reassignment makes the
+affected request predicted feasible, and the request subsequently meets its
+SLO.
 The missing question is therefore not only
 \emph{where should this request execute?}, but also
 \emph{when should an earlier placement become irreversible?}
 
-A two-request example shows why early commitment can waste SLO-feasible
-capacity.
-Consider two serving regions, $A$ and $B$.
-The first request, $r_1$, can satisfy its SLO in either region, whereas a
-later request, $r_2$, can succeed only in $A$.
-When $r_1$ arrives first, $A$ may appear faster and therefore be selected by a
-locally optimal router.
-If $r_2$ arrives shortly afterward, however, this decision has consumed its
-only feasible capacity.
-Placing $r_1$ in $B$ instead would allow both requests to succeed:
-\emph{region $A$ is merely faster for $r_1$, but it is essential for $r_2$}.
-Thus, optimizing requests independently can reduce aggregate request-level
-SLO attainment even when each individual placement appears reasonable when
-it is made.
+A natural response is to delay commitment so that later arrivals can influence
+placement.
+Figure~\ref{fig:motivation}(a) shows that fixed-delay late binding initially
+helps: short deferral exposes additional demand and improves SLO attainment.
+The benefit is not monotonic, however, and eventually reverses; at
+$\tau=80$~ms, SLO attainment falls to 54.2\%.
+Thus, preserving placement flexibility for longer is not by itself sufficient.
 
-Delaying commitment can reveal the second request, but observation consumes
-the same SLO slack needed for WAN transfer, queueing, and inference.
-A fixed-delay late-binding policy can therefore observe more demand before
-placing a request, yet every millisecond of added deferral also reduces the
-time remaining to satisfy that request's SLO.
-We call this tension the \emph{information--slack tradeoff}.
-Figure~\ref{fig:motivation} illustrates it empirically:
-a short fixed deferral can expose useful arrivals and improve SLO attainment,
-but the benefit saturates as the deferral consumes an increasing fraction of
-request SLO budgets.
-This leaves a design opportunity between immediate one-shot placement and
-fixed-delay late binding: make arrived demand visible immediately while
-preserving only bounded, request-specific placement revisability.
+The dominant recoverable loss comes from delaying demand visibility rather than
+from the direct SLO-budget cost of waiting.
+Figure~\ref{fig:motivation}(b) isolates these effects at the same
+$\tau=80$~ms operating point.
+An oracle that removes the artificial hold from SLO accounting while preserving
+the same late-binding behavior raises attainment only from 54.2\% to 54.8\%,
+a 0.6-percentage-point recovery.
+By contrast, preserving the same 80-ms final-binding delay while making held
+requests immediately visible to prospective capacity accounting raises
+attainment to 69.2\%, recovering 15.0 percentage points.
+Fixed-delay late binding therefore preserves useful placement flexibility while
+withholding already-arrived demand from subsequent planning, leaving later
+requests with an incomplete view of prospective replica load.
+The dominant failure is thus not delay alone, but delaying demand visibility
+together with commitment.
 
 RAVEL's key insight is that deferred commitment does not require deferred
 accounting.
-Rather than treating placement as one atomic decision, RAVEL separates when a
-request begins influencing capacity planning from when its destination becomes
-final.
+A request can influence capacity planning from the moment it arrives while its
+tentative placement remains revisable until engine handoff.
 On arrival, RAVEL obtains replica-specific SLO quotes, selects a tentative
 serving replica, and immediately attributes the request's prospective demand
 to that replica.
-Later arrivals therefore observe earlier demand even while the corresponding
-placements remain revisable.
-While an eligible request remains Router-owned, newly revealed demand may
-trigger bounded replanning and transfer both its tentative ownership and
-prospective charge to another replica.
-The placement becomes final only after successful engine handoff.
-By stopping reassignment at this explicit boundary, RAVEL preserves
-pre-handoff flexibility without migrating engine-managed KV state.
+While the request remains Router-owned, newly revealed demand or serving-state
+changes may trigger bounded replanning; reassignment transfers both tentative
+ownership and its prospective charge.
+Only successful engine handoff makes placement final.
+This lifecycle keeps tentative demand visible throughout while preserving the
+ability to correct stale pre-handoff allocations.
 
-Realizing this separation safely and efficiently requires three capabilities.
-First, RAVEL must determine which replicas remain SLO-feasible under
-heterogeneous WAN delays, engine backlog, Prefill and Decode interference, and
+Turning this separation into a practical serving system requires four
+capabilities.
+First, the Router must determine which replicas remain SLO-feasible under
+heterogeneous WAN delay, engine backlog, Prefill--Decode interference, and
 request-specific success criteria.
-It addresses this challenge with calibrated, replica-specific SLO quotes
-derived from live serving state.
-Second, tentative work must affect subsequent decisions without becoming
-double-counted or stale after reassignment.
-RAVEL therefore maintains transferable prospective accounting whose ownership
-and replica-dependent charges move atomically with each tentative placement.
-Third, revisability must not require repeatedly optimizing over every
-outstanding request or delaying work indefinitely.
-RAVEL restricts expensive replanning to a bounded Router-owned cohort and ends
-all placement revision at the engine-handoff boundary.
-Together, these mechanisms retain useful online flexibility while bounding the
-latency and state-management costs introduced by the control plane.
+Second, tentative work must remain visible exactly once as placement changes,
+requiring prospective accounting that moves atomically with ownership.
+Third, newly observed information must be exploited without unbounded waiting
+or repeatedly reconsidering all outstanding work, requiring bounded
+replanning.
+Finally, commitment and local execution must preserve the feasibility
+assumptions used by geographic placement while handling handoff failures
+safely.
+RAVEL realizes these requirements with calibrated replica-specific SLO quotes,
+transferable prospective accounting, a bounded Router-owned replanning cohort,
+an explicit engine-handoff commitment boundary, and engine-local TBT
+protection.
 
-We implement RAVEL as an asynchronous routing layer for
-vLLM~\cite{vllm} and evaluate it using five serving replicas across three
-clusters connected by physical WAN paths.
-Our experiments cover conversational traffic, bursty arrivals, and
-completion-oriented demand over six offered-load levels.
-At $16\times$ load, RAVEL improves request-level SLO attainment over DualMap
-by \textbf{8.8}, \textbf{11.2}, and
-\textbf{13.4 percentage points} on LMSYS, Burst, and DeepResearch,
-respectively.
-At the same load, it reduces P95 TTFT by
-\textbf{49.1--80.5\%} relative to DualMap.
-The online replanning path remains millisecond-scale, with a measured P95
-scheduling-pass latency of 2.10\,ms at Burst $12\times$ load.
+We implement RAVEL as an asynchronous routing layer for vLLM~\cite{vllm} and
+evaluate it on five serving replicas across three clusters connected by
+physical WAN paths.
+At $16\times$ load, RAVEL improves request-level SLO attainment over DualMap by
+\textbf{8.8}, \textbf{11.2}, and \textbf{13.4 percentage points} on LMSYS,
+Burst, and DeepResearch, respectively, while reducing P95 TTFT by
+\textbf{49.1--80.5\%} and P95 end-to-end latency by
+\textbf{15.5--56.8\%}.
+Mechanism ablations reinforce the same design logic: removing prospective
+accounting lowers SLO attainment by \textbf{21.4 percentage points}, disabling
+pre-handoff reassignment lowers it by \textbf{13.2 points}, and removing
+engine-local TBT protection lowers it by \textbf{9.8 points}.
+Online replanning remains millisecond-scale, with a measured P95
+scheduling-pass latency of 2.10\,ms on Burst $12\times$.
 
 In summary, this paper makes three contributions:
 \begin{itemize}
     \item
-    We identify the \emph{request-dependent value of regional capacity} and
-    the resulting \emph{information--slack tradeoff}: committing too early
-    ignores demand revealed by later arrivals, whereas waiting too long
-    consumes the SLO slack needed for successful execution.
+    We identify the request-dependent opportunity cost of regional capacity and
+    show that premature commitment creates avoidable allocation-induced SLO
+    misses.
+    We further diagnose fixed-delay late binding and find that its dominant
+    recoverable loss comes from delaying already-arrived demand visibility
+    rather than from the direct waiting penalty.
 
     \item
-    We introduce an \emph{immediate-accounting, deferred-commitment}
-    abstraction and realize it through replica-specific SLO quotes,
-    transferable prospective accounting, bounded pre-handoff replanning, and
-    an explicit engine-handoff commitment boundary.
+    We introduce an immediate-accounting, deferred-commitment abstraction:
+    tentative demand influences capacity planning from arrival while placement
+    remains revisable until engine handoff.
+    RAVEL realizes this abstraction through replica-specific SLO quotes,
+    transferable prospective accounting, bounded pre-handoff replanning, and a
+    failure-safe commitment boundary.
 
     \item
     We implement RAVEL on vLLM and evaluate it on a physical-WAN deployment,
-    demonstrating consistent SLO-attainment improvements across
-    conversational, bursty, and completion-oriented workloads while retaining
-    millisecond-scale online planning overhead.
+    demonstrating higher request-level SLO attainment across conversational,
+    bursty, and completion-oriented workloads with millisecond-scale online
+    planning overhead.
 \end{itemize}
-
-
-
-
