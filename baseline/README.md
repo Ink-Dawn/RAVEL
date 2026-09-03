@@ -123,19 +123,6 @@ Base budget 为 TTFT 0.8 s、TBT 0.08 s、TTLT 8 s。
 - rebalance：queued tokens > 32768 或等待 >= 0.5 s；hysteresis 0.02 s；
   每次最多移动 8 条。
 
-
-
-完整矩阵中 Burst 4x--16x 和 DeepResearch 2x--16x 实际使用仓库内
-**DualMap-CA** adaptation，不是标准 DualMap：overload fraction 0.40、
-escape ratio 0.10、cluster shares 0.40/0.45/0.15、type shares
-`0.10/0.85/0.05;0.15/0.65/0.20;0.10/0.25/0.65`、warmup 10、
-objective ratio `1e9`。Burst 的 share slack 为 0.0（force type 0），
-DeepResearch 为 0.1（不 force type）；二者都将 rebalance wait 设为 3600 s、
-token threshold 设为 `1e9`，即实际关闭 rebalance。只有两个 hash cluster
-都 infeasible 时才检查非 hash cluster，且 escape 目标 objective 不超过
-primary 的 0.10。其余 cell 使用标准 DualMap：LMSYS 全部、Burst 1x/2x、
-DeepResearch 1x。
-
 ### SkyWalker
 
 实验代码是按 [SkyWalker/SkyLB 论文](https://arxiv.org/abs/2505.24095)
